@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adapt_diff"
+version = "0.1.0"
+description = "Model-agnostic adapter interface for diffusion models"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "McKell Carter"}
+]
+keywords = ["diffusion", "adapters", "pytorch", "deep-learning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.21.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.urls]
+Repository = "https://github.com/mckellcarter/adapt_diff"
+
+[project.scripts]
+adapt_diff = "adapt_diff.scripts.cli:main"
+
+[project.entry-points."adapt_diff.adapters"]
+# External adapters can register here via their own pyproject.toml
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["adapt_diff*"]
+
+[tool.setuptools.package-data]
+adapt_diff = ["py.typed"]
+"*" = ["LICENSE"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
