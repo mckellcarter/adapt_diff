@@ -51,9 +51,18 @@ The AbU Custom SD adapter (abu-custom-sd14) uses:
 - Base model: Stable Diffusion v1.4 (CompVis/stable-diffusion-v1-4)
 - Fine-tuning: Custom Diffusion method from AttributeByUnlearning
 
-Same license and citation as MSCOCO T2I above (CC BY-NC-SA 4.0).
+Licensed under CC BY-NC-SA 4.0.
 
-Citation for Custom Diffusion method:
+Citation (AttributeByUnlearning):
+    @inproceedings{wang2024attributebyunlearning,
+        title={Attributing Learned Concepts in Neural Networks to Training Data},
+        author={Wang, Sheng-Yu and Adebara, Iyanuoluwa and Leino, Klas and
+                Fredrikson, Matt and Zhu, Jun-Yan},
+        booktitle={NeurIPS},
+        year={2024}
+    }
+
+Citation (Custom Diffusion method):
     @inproceedings{kumari2023customdiffusion,
         title={Multi-Concept Customization of Text-to-Image Diffusion},
         author={Kumari, Nupur and Zhang, Bingliang and Zhang, Richard and
