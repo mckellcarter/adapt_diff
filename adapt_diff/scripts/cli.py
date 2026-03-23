@@ -12,8 +12,15 @@ import urllib.request
 from pathlib import Path
 
 CHECKPOINT_URLS = {
-    "dmd2": "https://huggingface.co/mckell/diffviews-dmd2-checkpoint/resolve/main/dmd2-imagenet-64-10step.pkl",
-    "edm": "https://nvlabs-fi-cdn.nvidia.com/edm/pretrained/edm-imagenet-64x64-cond-adm.pkl",
+    "dmd2": (
+        "https://huggingface.co/mckell/diffviews-dmd2-checkpoint"
+        "/resolve/main/dmd2-imagenet-64-10step.pkl"
+    ),
+    "edm": (
+        "https://nvlabs-fi-cdn.nvidia.com/edm/pretrained/"
+        "edm-imagenet-64x64-cond-adm.pkl"
+    ),
+    "mscoco": "huggingface://sywang/AttributeByUnlearning/mscoco/model_fisher.7z",
 }
 
 CHECKPOINT_INFO = {
@@ -22,7 +29,7 @@ CHECKPOINT_INFO = {
         "size_mb": 296,
         "license": "MIT",
         "description": "DMD2 ImageNet 64x64 (1-10 step, fine-tuned for multi-step)",
-        "note": "Fine-tuned from original DMD2 to support up to 10 diffusion steps (for visualization)",
+        "note": "Fine-tuned from original DMD2 for multi-step (up to 10 steps)",
     },
     "edm": {
         "filename": "edm-imagenet-64x64-cond-adm.pkl",
@@ -30,7 +37,63 @@ CHECKPOINT_INFO = {
         "license": "CC BY-NC-SA 4.0",
         "description": "EDM ImageNet 64x64 (multi-step)",
     },
+    "mscoco": {
+        "filename": "model.bin",
+        "size_mb": 150,
+        "license": "CC BY-NC-SA 4.0",
+        "description": "MSCOCO T2I 128x128 (text-to-image diffusion)",
+        "note": "From AttributeByUnlearning (NeurIPS 2024). Requires 7z.",
+        "hf_repo": "sywang/AttributeByUnlearning",
+        "hf_files": ["mscoco/model_fisher.7z"],
+    },
 }
+
+
+def download_mscoco(output_dir: Path, info: dict):
+    """Download MSCOCO model from HuggingFace dataset repo."""
+    import subprocess
+    import shutil
+
+    mscoco_dir = output_dir / "mscoco"
+    model_path = mscoco_dir / "model.bin"
+
+    if model_path.exists():
+        print(f"  Status: Already exists at {model_path}")
+        return
+
+    mscoco_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from huggingface_hub import hf_hub_download
+
+        print("  Downloading from HuggingFace...")
+        archive_path = hf_hub_download(
+            repo_id=info["hf_repo"],
+            filename="mscoco/model_fisher.7z",
+            repo_type="dataset",
+        )
+
+        # Find 7z executable
+        sevenz = shutil.which("7z") or shutil.which("7zz")
+        if not sevenz:
+            print("  Error: 7z not found. Install p7zip:")
+            print("    brew install p7zip (mac) / apt install p7zip-full (linux)")
+            print(f"  Archive downloaded to: {archive_path}")
+            print("  Extract manually: 7z x model_fisher.7z -o<output_dir>/mscoco")
+            return
+
+        print(f"  Extracting with {sevenz}...")
+        subprocess.run([sevenz, "x", archive_path, f"-o{mscoco_dir}", "-y"], check=True)
+
+        if model_path.exists():
+            print(f"  Saved: {model_path} ({model_path.stat().st_size / 1e6:.1f} MB)")
+        else:
+            print(f"  Extracted to: {mscoco_dir}")
+
+    except ImportError:
+        print("  Error: huggingface_hub not installed. Run: pip install huggingface_hub")
+    except Exception as e:
+        print(f"  Error: {e}")
 
 
 def download_command(args):
@@ -52,7 +115,6 @@ def download_command(args):
 
         info = CHECKPOINT_INFO[model]
         filename = info["filename"]
-        filepath = output_dir / filename
 
         print(f"Model: {model}")
         print(f"  {info['description']}")
@@ -60,6 +122,14 @@ def download_command(args):
             print(f"  Note: {info['note']}")
         print(f"  License: {info['license']}")
         print(f"  Size: ~{info['size_mb']} MB")
+
+        # Handle MSCOCO specially (HuggingFace dataset repo)
+        if model == "mscoco":
+            download_mscoco(output_dir, info)
+            print()
+            continue
+
+        filepath = output_dir / filename
 
         if filepath.exists():
             print(f"  Status: Already exists at {filepath}")
@@ -92,10 +162,11 @@ def download_command(args):
     print()
     print("Usage example:")
     print("  from adapt_diff import get_adapter")
-    print(f"  adapter = get_adapter('edm-imagenet-64').from_checkpoint('{output_dir}/edm-imagenet-64x64-cond-adm.pkl')")
+    print("  adapter = get_adapter('edm-imagenet-64').from_checkpoint(")
+    print(f"      '{output_dir}/edm-imagenet-64x64-cond-adm.pkl')")
 
 
-def list_command(args):
+def list_command(_args):
     """List available adapters."""
     from adapt_diff import list_adapters
     adapters = list_adapters()
@@ -125,7 +196,7 @@ def main():
     download_parser.add_argument(
         "--models", "-m",
         nargs="*",
-        choices=["dmd2", "edm", "all"],
+        choices=["dmd2", "edm", "mscoco", "all"],
         default=["all"],
         help="Models to download (default: all)"
     )
