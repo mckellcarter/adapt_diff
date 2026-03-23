@@ -32,7 +32,8 @@ adapt_diff/
 │   │   ├── edm_imagenet.py   # EDM ImageNet 64x64
 │   │   └── mscoco_t2i.py     # MSCOCO T2I 128x128
 │   ├── scripts/
-│   │   └── cli.py            # CLI (download, list)
+│   │   ├── cli.py            # CLI (download, list)
+│   │   └── downloaders.py    # Model-specific download functions
 │   └── vendor/               # Licenses and attributions
 │       └── LICENSE
 └── tests/
@@ -48,7 +49,7 @@ adapt_diff/
 from adapt_diff import get_adapter, list_adapters
 
 # List available adapters
-print(list_adapters())  # ['dmd2-imagenet-64', 'edm-imagenet-64']
+print(list_adapters())  # ['dmd2-imagenet-64', 'edm-imagenet-64', 'mscoco-t2i-128']
 
 # Load adapter from checkpoint
 AdapterClass = get_adapter('edm-imagenet-64')
