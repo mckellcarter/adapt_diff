@@ -20,3 +20,60 @@ Summary of license terms:
 - NonCommercial: You may not use the material for commercial purposes
 - ShareAlike: If you remix, transform, or build upon the material, you must
   distribute your contributions under the same license
+
+================================================================================
+
+MSCOCO T2I Model Weights
+------------------------
+
+The MSCOCO T2I model weights (mscoco-t2i-128 adapter) are from:
+https://github.com/PeterWang512/AttributeByUnlearning
+
+Licensed under CC BY-NC-SA 4.0.
+
+Citation:
+    @inproceedings{wang2024attributebyunlearning,
+        title={Attributing Learned Concepts in Neural Networks to Training Data},
+        author={Wang, Sheng-Yu and Adebara, Iyanuoluwa and Leino, Klas and
+                Fredrikson, Matt and Zhu, Jun-Yan},
+        booktitle={NeurIPS},
+        year={2024}
+    }
+
+The model architecture uses diffusers' UNet2DConditionModel (Apache 2.0).
+
+================================================================================
+
+MSCOCO Dataset
+--------------
+
+The MSCOCO (Microsoft Common Objects in Context) dataset is licensed under
+Creative Commons Attribution 4.0 License (CC BY 4.0).
+
+https://cocodataset.org/#termsofuse
+
+Citation:
+    @article{lin2014microsoft,
+        title={Microsoft COCO: Common Objects in Context},
+        author={Lin, Tsung-Yi and Maire, Michael and Belongie, Serge and
+                Hays, James and Perona, Pietro and Ramanan, Deva and
+                Doll{\'a}r, Piotr and Zitnick, C Lawrence},
+        journal={ECCV},
+        year={2014}
+    }
+
+================================================================================
+
+U-Net Architecture
+------------------
+
+The U-Net architecture was originally proposed by:
+
+    Ronneberger, O., Fischer, P., Brox, T. (2015). U-Net: Convolutional
+    Networks for Biomedical Image Segmentation. Medical Image Computing and
+    Computer-Assisted Intervention (MICCAI), LNCS 9351, 234-241.
+
+    arXiv:1505.04597
+
+The diffusion model adapters in this package use U-Net-based architectures
+as implemented in the respective model codebases.

@@ -34,8 +34,10 @@ Thumbs.db
 *.pkl
 *.pth
 *.pt
+*.bin
 *.ckpt
 *.safetensors
+*.7z
 /checkpoints/
 
 # Logs
