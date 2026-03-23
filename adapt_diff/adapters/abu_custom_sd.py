@@ -17,7 +17,7 @@ from adapt_diff.registry import register_adapter
 
 
 @register_adapter('abu-custom-sd14')
-class CustomDiffusionAdapter(HookMixin, GeneratorAdapter):
+class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
     """
     Adapter for Custom Diffusion model (Stable Diffusion v1.4 based).
 
@@ -236,7 +236,7 @@ class CustomDiffusionAdapter(HookMixin, GeneratorAdapter):
         vae_id: Optional[str] = 'stabilityai/sd-vae-ft-mse',
         enable_xformers: bool = True,
         **kwargs
-    ) -> 'CustomDiffusionAdapter':
+    ) -> 'AbuCustomSDAdapter':
         """
         Load adapter from checkpoint or pretrained SD.
 
@@ -305,14 +305,14 @@ class CustomDiffusionAdapter(HookMixin, GeneratorAdapter):
             "sd_version": "CompVis/stable-diffusion-v1-4",
         }
 
-    def to(self, device: str) -> 'CustomDiffusionAdapter':
+    def to(self, device: str) -> 'AbuCustomSDAdapter':
         self._model = self._model.to(device)
         if self._vae is not None:
             self._vae = self._vae.to(device)
         self._device = device
         return self
 
-    def eval(self) -> 'CustomDiffusionAdapter':
+    def eval(self) -> 'AbuCustomSDAdapter':
         self._model.eval()
         if self._vae is not None:
             self._vae.eval()

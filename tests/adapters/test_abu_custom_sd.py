@@ -38,8 +38,8 @@ def adapter_with_vae():
     )
 
 
-class TestCustomDiffusionAdapter:
-    """Tests for CustomDiffusionAdapter."""
+class TestAbuCustomSDAdapter:
+    """Tests for AbuCustomSDAdapter."""
 
     def test_load_base_model(self, adapter):
         """Test that base SD model loads correctly."""
@@ -128,9 +128,9 @@ class TestCustomDiffusionAdapter:
 
     def test_default_config(self):
         """Test default configuration."""
-        from adapt_diff.adapters.custom_diffusion import CustomDiffusionAdapter
+        from adapt_diff.adapters.abu_custom_sd import AbuCustomSDAdapter
 
-        config = CustomDiffusionAdapter.get_default_config()
+        config = AbuCustomSDAdapter.get_default_config()
 
         assert config['img_resolution'] == 512
         assert config['latent_resolution'] == 64
@@ -139,7 +139,7 @@ class TestCustomDiffusionAdapter:
         assert config['sd_version'] == 'CompVis/stable-diffusion-v1-4'
 
 
-class TestCustomDiffusionAdapterVAE:
+class TestAbuCustomSDAdapterVAE:
     """Tests for VAE functionality."""
 
     def test_vae_loaded(self, adapter_with_vae):

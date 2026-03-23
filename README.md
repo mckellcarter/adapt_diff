@@ -28,7 +28,7 @@ adapt_diff/
 │   ├── hooks.py              # HookMixin utilities
 │   ├── registry.py           # Registration + entry-point discovery
 │   ├── adapters/
-│   │   ├── custom_diffusion.py # AbU Custom SD 512x512
+│   │   ├── abu_custom_sd.py    # AbU Custom SD 512x512
 │   │   ├── dmd2_imagenet.py  # DMD2 ImageNet 64x64
 │   │   ├── edm_imagenet.py   # EDM ImageNet 64x64
 │   │   └── mscoco_t2i.py     # MSCOCO T2I 128x128
