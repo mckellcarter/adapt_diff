@@ -44,6 +44,26 @@ The model architecture uses diffusers' UNet2DConditionModel (Apache 2.0).
 
 ================================================================================
 
+Custom Diffusion Model Weights
+------------------------------
+
+The Custom Diffusion adapter (abu-custom-sd14) uses:
+- Base model: Stable Diffusion v1.4 (CompVis/stable-diffusion-v1-4)
+- Fine-tuning: Custom Diffusion method from AttributeByUnlearning
+
+Same license and citation as MSCOCO T2I above (CC BY-NC-SA 4.0).
+
+Additional citation for Custom Diffusion method:
+    @inproceedings{kumari2023customdiffusion,
+        title={Multi-Concept Customization of Text-to-Image Diffusion},
+        author={Kumari, Nupur and Zhang, Bingliang and Zhang, Richard and
+                Shechtman, Eli and Zhu, Jun-Yan},
+        booktitle={CVPR},
+        year={2023}
+    }
+
+================================================================================
+
 MSCOCO Dataset
 --------------
 

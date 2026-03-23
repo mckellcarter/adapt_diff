@@ -28,6 +28,7 @@ adapt_diff/
 │   ├── hooks.py              # HookMixin utilities
 │   ├── registry.py           # Registration + entry-point discovery
 │   ├── adapters/
+│   │   ├── custom_diffusion.py # Custom Diffusion 512x512
 │   │   ├── dmd2_imagenet.py  # DMD2 ImageNet 64x64
 │   │   ├── edm_imagenet.py   # EDM ImageNet 64x64
 │   │   └── mscoco_t2i.py     # MSCOCO T2I 128x128
@@ -49,7 +50,7 @@ adapt_diff/
 from adapt_diff import get_adapter, list_adapters
 
 # List available adapters
-print(list_adapters())  # ['dmd2-imagenet-64', 'edm-imagenet-64', 'mscoco-t2i-128']
+print(list_adapters())  # ['abu-custom-sd14', 'dmd2-imagenet-64', ...]
 
 # Load adapter from checkpoint
 AdapterClass = get_adapter('edm-imagenet-64')
@@ -134,6 +135,7 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
 
 | Model | Adapter Name | Resolution | Description |
 |-------|--------------|------------|-------------|
+| AbU Custom SD | `abu-custom-sd14` | 512x512 | AttributeByUnlearning SD v1.4 concept fine-tuning |
 | DMD2 | `dmd2-imagenet-64` | 64x64 | Distribution Matching Distillation (1-10 steps) |
 | EDM | `edm-imagenet-64` | 64x64 | Elucidating Diffusion Models (50-256 steps) |
 | MSCOCO T2I | `mscoco-t2i-128` | 128x128 | Text-to-image diffusion (1000 steps, latent space) |
@@ -150,6 +152,7 @@ adapt_diff download
 adapt_diff download --models edm
 adapt_diff download --models dmd2
 adapt_diff download --models mscoco
+adapt_diff download --models custom_diffusion
 
 # Custom output directory
 adapt_diff download --output-dir ./my_checkpoints
@@ -159,10 +162,11 @@ Or download manually:
 - **EDM**: https://nvlabs-fi-cdn.nvidia.com/edm/pretrained/
 - **DMD2**: https://huggingface.co/mckell/diffviews-dmd2-checkpoint
 - **MSCOCO T2I**: https://huggingface.co/datasets/sywang/AttributeByUnlearning
+- **Custom Diffusion**: Base SD v1.4 auto-downloads via diffusers; AbC benchmark from above
 
 **Note on DMD2 checkpoint**: The hosted DMD2 checkpoint has been fine-tuned from the original single-step model to support up to 10 diffusion steps, enabling trajectory visualization and intermediate step analysis.
 
-**Note on MSCOCO T2I**: Requires `huggingface_hub` and `7z` for download/extraction. Model operates in latent space; VAE loaded automatically from HuggingFace.
+**Note on MSCOCO T2I / Custom Diffusion**: Requires `huggingface_hub` and `7z` for download/extraction. Models operate in latent space; VAE loaded automatically from HuggingFace.
 
 **Security Note**: Some checkpoints are pickle (`.pkl`) files which can execute arbitrary code. Only load checkpoints from trusted sources.
 
@@ -185,6 +189,7 @@ my-model = "my_package.adapters:MyModelAdapter"
 | EDM checkpoints | CC BY-NC-SA 4.0 |
 | DMD2 checkpoints | MIT |
 | MSCOCO T2I checkpoints | CC BY-NC-SA 4.0 |
+| Custom Diffusion checkpoints | CC BY-NC-SA 4.0 |
 | MSCOCO dataset | CC BY 4.0 |
 
 The code in `adapt_diff/vendor/` is derived from [NVIDIA's EDM repository](https://github.com/NVlabs/edm) and is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0).

@@ -13,6 +13,14 @@ from pathlib import Path
 from .downloaders import DOWNLOADERS
 
 CHECKPOINT_INFO = {
+    "custom_diffusion": {
+        "filename": "models_test",
+        "size_mb": 500,
+        "license": "CC BY-NC-SA 4.0",
+        "description": "Custom Diffusion 512x512 (SD v1.4 + AbC benchmark)",
+        "note": "Base SD auto-downloads via diffusers. Requires 7z.",
+        "hf_repo": "sywang/AttributeByUnlearning",
+    },
     "dmd2": {
         "filename": "dmd2-imagenet-64-10step.pkl",
         "size_mb": 296,

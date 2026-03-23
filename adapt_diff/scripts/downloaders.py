@@ -113,8 +113,67 @@ def download_mscoco(output_dir: Path, info: dict) -> bool:
         return False
 
 
+def download_custom_diffusion(output_dir: Path, info: dict) -> bool:
+    """Download Custom Diffusion model weights from HuggingFace.
+
+    Base SD v1.4 UNet is auto-downloaded by diffusers on first use.
+    This downloads the AbC benchmark custom diffusion weights.
+    """
+    import shutil
+    import subprocess
+
+    abc_dir = output_dir / "custom_diffusion" / "abc"
+    marker_file = abc_dir / ".download_complete"
+
+    if marker_file.exists():
+        print(f"  Status: Already exists at {abc_dir}")
+        return True
+
+    abc_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        from huggingface_hub import hf_hub_download
+
+        print("  Base SD v1.4 UNet auto-downloads on first use via diffusers")
+        print("  Downloading AbC benchmark data from HuggingFace...")
+
+        # Download the models archive
+        archive_path = hf_hub_download(
+            repo_id=info["hf_repo"],
+            filename="custom_diffusion/abc/models_test/models_test.7z.001",
+            repo_type="dataset",
+        )
+
+        # Find 7z executable
+        sevenz = shutil.which("7z") or shutil.which("7zz")
+        if not sevenz:
+            print("  Error: 7z not found. Install p7zip:")
+            print("    brew install p7zip (mac) / apt install p7zip-full (linux)")
+            print(f"  Archive downloaded to: {archive_path}")
+            return False
+
+        print(f"  Extracting with {sevenz}...")
+        subprocess.run(
+            [sevenz, "x", archive_path, f"-o{abc_dir}", "-y"],
+            check=True
+        )
+
+        # Create marker file
+        marker_file.touch()
+        print(f"  Extracted to: {abc_dir}")
+        return True
+
+    except ImportError:
+        print("  Error: huggingface_hub not installed. Run: pip install huggingface_hub")
+        return False
+    except Exception as e:
+        print(f"  Error: {e}")
+        return False
+
+
 # Registry of download functions
 DOWNLOADERS = {
+    "custom_diffusion": download_custom_diffusion,
     "dmd2": download_dmd2,
     "edm": download_edm,
     "mscoco": download_mscoco,
