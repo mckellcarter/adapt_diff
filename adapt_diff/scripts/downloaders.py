@@ -113,8 +113,25 @@ def download_mscoco(output_dir: Path, info: dict) -> bool:
         return False
 
 
+def download_abu_custom_sd(_output_dir: Path, _info: dict) -> bool:
+    """Info about AbU Custom SD model.
+
+    Base SD v1.4 UNet auto-downloads from HuggingFace via diffusers on first use.
+    No additional download required for basic functionality.
+    """
+    print("  Base SD v1.4 UNet auto-downloads on first adapter use via diffusers")
+    print("  No additional download required for basic functionality")
+    print()
+    print("  To use with custom concept weights, train with Custom Diffusion or")
+    print("  download weights from: https://github.com/adobe-research/custom-diffusion")
+    print()
+    print("  Fisher info available at: sywang/AttributeByUnlearning (abc/sd_fisher.pt)")
+    return True
+
+
 # Registry of download functions
 DOWNLOADERS = {
+    "abu_custom_sd": download_abu_custom_sd,
     "dmd2": download_dmd2,
     "edm": download_edm,
     "mscoco": download_mscoco,
