@@ -13,13 +13,12 @@ from pathlib import Path
 from .downloaders import DOWNLOADERS
 
 CHECKPOINT_INFO = {
-    "custom_diffusion": {
-        "filename": "models_test",
-        "size_mb": 500,
+    "abu_custom_sd": {
+        "filename": "auto-download",
+        "size_mb": 3400,
         "license": "CC BY-NC-SA 4.0",
-        "description": "Custom Diffusion 512x512 (SD v1.4 + AbC benchmark)",
-        "note": "Base SD auto-downloads via diffusers. Requires 7z.",
-        "hf_repo": "sywang/AttributeByUnlearning",
+        "description": "AbU Custom SD 512x512 (SD v1.4 base)",
+        "note": "Base model auto-downloads via diffusers (~3.4GB on first use)",
     },
     "dmd2": {
         "filename": "dmd2-imagenet-64-10step.pkl",

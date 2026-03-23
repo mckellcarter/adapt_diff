@@ -152,7 +152,7 @@ adapt_diff download
 adapt_diff download --models edm
 adapt_diff download --models dmd2
 adapt_diff download --models mscoco
-adapt_diff download --models custom_diffusion
+adapt_diff download --models abu_custom_sd
 
 # Custom output directory
 adapt_diff download --output-dir ./my_checkpoints
