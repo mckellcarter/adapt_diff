@@ -28,7 +28,7 @@ adapt_diff/
 │   ├── hooks.py              # HookMixin utilities
 │   ├── registry.py           # Registration + entry-point discovery
 │   ├── adapters/
-│   │   ├── custom_diffusion.py # Custom Diffusion 512x512
+│   │   ├── custom_diffusion.py # AbU Custom SD 512x512
 │   │   ├── dmd2_imagenet.py  # DMD2 ImageNet 64x64
 │   │   ├── edm_imagenet.py   # EDM ImageNet 64x64
 │   │   └── mscoco_t2i.py     # MSCOCO T2I 128x128
@@ -162,11 +162,11 @@ Or download manually:
 - **EDM**: https://nvlabs-fi-cdn.nvidia.com/edm/pretrained/
 - **DMD2**: https://huggingface.co/mckell/diffviews-dmd2-checkpoint
 - **MSCOCO T2I**: https://huggingface.co/datasets/sywang/AttributeByUnlearning
-- **Custom Diffusion**: Base SD v1.4 auto-downloads via diffusers; AbC benchmark from above
+- **AbU Custom SD**: Base SD v1.4 auto-downloads via diffusers; AbC benchmark from above
 
 **Note on DMD2 checkpoint**: The hosted DMD2 checkpoint has been fine-tuned from the original single-step model to support up to 10 diffusion steps, enabling trajectory visualization and intermediate step analysis.
 
-**Note on MSCOCO T2I / Custom Diffusion**: Requires `huggingface_hub` and `7z` for download/extraction. Models operate in latent space; VAE loaded automatically from HuggingFace.
+**Note on MSCOCO T2I / AbU Custom SD**: Requires `huggingface_hub` for download. Models operate in latent space; VAE loaded automatically from HuggingFace.
 
 **Security Note**: Some checkpoints are pickle (`.pkl`) files which can execute arbitrary code. Only load checkpoints from trusted sources.
 
@@ -189,7 +189,7 @@ my-model = "my_package.adapters:MyModelAdapter"
 | EDM checkpoints | CC BY-NC-SA 4.0 |
 | DMD2 checkpoints | MIT |
 | MSCOCO T2I checkpoints | CC BY-NC-SA 4.0 |
-| Custom Diffusion checkpoints | CC BY-NC-SA 4.0 |
+| AbU Custom SD checkpoints | CC BY-NC-SA 4.0 |
 | MSCOCO dataset | CC BY 4.0 |
 
 The code in `adapt_diff/vendor/` is derived from [NVIDIA's EDM repository](https://github.com/NVlabs/edm) and is licensed under Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0).
