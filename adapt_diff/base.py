@@ -52,6 +52,65 @@ class GeneratorAdapter(ABC):
         """
         pass
 
+    @property
+    @abstractmethod
+    def prediction_type(self) -> str:
+        """
+        Model's prediction target.
+
+        Returns:
+            One of: 'epsilon', 'sample', 'v_prediction'
+            - epsilon: Predicts noise (most common)
+            - sample: Predicts denoised x0
+            - v_prediction: Predicts velocity
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def uses_latent(self) -> bool:
+        """
+        Whether model operates in latent space or pixel space.
+
+        Returns:
+            True if latent-space model (e.g., Stable Diffusion)
+            False if pixel-space model (e.g., EDM, DMD2)
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def in_channels(self) -> int:
+        """
+        Number of input channels for the model.
+
+        Returns:
+            Channel count: 3 (pixel RGB), 4 (SD latent), etc.
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def conditioning_type(self) -> str:
+        """
+        Type of conditioning the model uses.
+
+        Returns:
+            One of: 'class', 'text', 'unconditional'
+        """
+        pass
+
+    @property
+    def latent_scale_factor(self) -> int:
+        """
+        Spatial downsampling factor for latent models.
+
+        Returns:
+            Downsampling factor (e.g., 8 for SD: 512->64)
+            Returns 1 for pixel-space models
+        """
+        return 8 if self.uses_latent else 1
+
     @abstractmethod
     def forward(
         self,
@@ -104,6 +163,171 @@ class GeneratorAdapter(ABC):
             Dict mapping layer_name -> (C, H, W) shape tuple
         """
         pass
+
+    @abstractmethod
+    def get_timesteps(self, num_steps: int, device: str = 'cuda') -> torch.Tensor:
+        """
+        Return noise schedule for sampling with num_steps.
+
+        Args:
+            num_steps: Number of denoising steps
+            device: Target device for tensor
+
+        Returns:
+            Timesteps/sigmas tensor (num_steps,) or (num_steps+1,)
+            - For timestep-based (DDPM): integers [0-999] in descending order
+            - For sigma-based (EDM): floats from sigma_max to sigma_min
+
+        Implementation differs per noise parameterization:
+            - Timestep models: DDPMScheduler.timesteps after set_timesteps()
+            - Sigma models: Karras schedule with rho parameter
+        """
+        pass
+
+    @abstractmethod
+    def step(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Single denoising step from x_t to x_{t-1}.
+
+        Handles prediction type conversion internally (epsilon -> x0 if needed).
+
+        Args:
+            x_t: Current noisy sample (B, C, H, W)
+            t: Current timestep/sigma (B,) or scalar
+            model_output: Raw model output (B, C, H, W)
+            **kwargs: Scheduler-specific options (e.g., eta, generator, t_next)
+
+        Returns:
+            x_{t-1}: Less noisy sample (B, C, H, W)
+
+        Note: This wraps scheduler.step() for timestep models or implements
+        EDM-style stepping for sigma models.
+        """
+        pass
+
+    @abstractmethod
+    def get_initial_noise(
+        self,
+        batch_size: int,
+        device: str = 'cuda',
+        generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
+        """
+        Generate correctly shaped and scaled initial noise.
+
+        Args:
+            batch_size: Number of samples
+            device: Target device
+            generator: Optional RNG for reproducibility
+
+        Returns:
+            Initial noise tensor with correct shape and scaling:
+            - Latent models: (B, 4, H/8, W/8)
+            - Pixel models: (B, 3, H, W)
+            - Scaled appropriately (sigma_max for EDM, unit variance for DDPM)
+        """
+        pass
+
+    @abstractmethod
+    def prepare_conditioning(
+        self,
+        text: Optional[str] = None,
+        class_label: Optional[int] = None,
+        batch_size: int = 1,
+        device: str = 'cuda',
+        **kwargs
+    ) -> Any:
+        """
+        Prepare model-ready conditioning.
+
+        Args:
+            text: Text prompt (for text-conditioned models)
+            class_label: Class index (for class-conditioned models)
+            batch_size: Number of samples to condition
+            device: Target device
+            **kwargs: Model-specific (e.g., negative_prompt, truncation)
+
+        Returns:
+            Conditioning in model-specific format:
+            - Text models: encoder_hidden_states (B, seq_len, dim)
+            - Class models: one-hot labels (B, num_classes)
+            - Unconditional: None or empty tensor
+
+        Raises:
+            ValueError: If required conditioning not provided
+        """
+        pass
+
+    def encode(self, images: torch.Tensor) -> torch.Tensor:
+        """
+        Encode images to model's internal representation.
+
+        Args:
+            images: Pixel-space images (B, 3, H, W), range [-1, 1]
+
+        Returns:
+            Internal representation:
+            - Latent models: (B, 4, H/8, W/8) latent codes
+            - Pixel models: Identity, returns input unchanged
+        """
+        return images
+
+    def decode(self, representation: torch.Tensor) -> torch.Tensor:
+        """
+        Decode internal representation to pixel space.
+
+        Args:
+            representation: Model's internal representation
+
+        Returns:
+            Images (B, 3, H, W), range [-1, 1]
+        """
+        return representation
+
+    def forward_with_cfg(
+        self,
+        x: torch.Tensor,
+        t: torch.Tensor,
+        cond: Any,
+        uncond: Optional[Any] = None,
+        guidance_scale: float = 1.0,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Forward with classifier-free guidance.
+
+        Args:
+            x: Noisy input (B, C, H, W)
+            t: Timestep/sigma
+            cond: Conditional input from prepare_conditioning()
+            uncond: Unconditional input (None = use empty/null conditioning)
+            guidance_scale: CFG scale (1.0 = no guidance)
+            **kwargs: Passed to forward()
+
+        Returns:
+            Guided model output (B, C, H, W)
+
+        Formula: output = uncond_out + scale * (cond_out - uncond_out)
+
+        Note: Models without CFG support should just call forward(cond) and
+        ignore guidance_scale. This provides a unified interface.
+        """
+        if guidance_scale == 1.0 or uncond is None:
+            # No CFG, just forward with conditioning
+            if isinstance(cond, dict):
+                return self.forward(x, t, **cond, **kwargs)
+            else:
+                return self.forward(x, t, class_labels=cond, **kwargs)
+
+        raise NotImplementedError(
+            f"{self.__class__.__name__} does not support classifier-free guidance"
+        )
 
     @classmethod
     @abstractmethod

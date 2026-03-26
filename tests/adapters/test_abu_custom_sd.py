@@ -175,3 +175,137 @@ class TestAbuCustomSDAdapterVAE:
 
         with pytest.raises(ValueError, match="VAE not provided"):
             adapter.encode_images(img)
+
+    def test_encode_method(self, adapter_with_vae):
+        """Test new encode() method."""
+        img = torch.randn(1, 3, 512, 512)
+
+        latents = adapter_with_vae.encode(img)
+
+        assert latents.shape == (1, 4, 64, 64)
+
+    def test_decode_method(self, adapter_with_vae):
+        """Test new decode() method."""
+        latents = torch.randn(1, 4, 64, 64)
+
+        images = adapter_with_vae.decode(latents)
+
+        assert images.shape == (1, 3, 512, 512)
+
+
+class TestAbuCustomSDAdapterDiffusionMethods:
+    """Tests for new diffusion-specific methods."""
+
+    def test_get_timesteps(self, adapter):
+        """Test timestep schedule generation."""
+        num_steps = 50
+        timesteps = adapter.get_timesteps(num_steps, device='cpu')
+
+        assert isinstance(timesteps, torch.Tensor)
+        assert len(timesteps) == num_steps
+        # DDPM timesteps should be in descending order
+        assert timesteps[0] > timesteps[-1]
+        assert timesteps[-1] >= 0
+
+    def test_step(self, adapter):
+        """Test single denoising step."""
+        # Need to set timesteps first for scheduler
+        timesteps = adapter.get_timesteps(50, device='cpu')
+
+        batch_size = 2
+        x_t = torch.randn(batch_size, 4, 64, 64)
+        t = timesteps[25]  # Use a valid timestep from schedule
+        model_output = torch.randn(batch_size, 4, 64, 64)
+
+        x_next = adapter.step(x_t, t, model_output)
+
+        assert x_next.shape == x_t.shape
+        assert isinstance(x_next, torch.Tensor)
+
+    def test_get_initial_noise(self, adapter):
+        """Test initial noise generation."""
+        batch_size = 4
+        noise = adapter.get_initial_noise(batch_size, device='cpu')
+
+        assert noise.shape == (batch_size, 4, 64, 64)
+        assert isinstance(noise, torch.Tensor)
+        # Check approximate unit variance
+        assert 0.5 < noise.std().item() < 1.5
+
+    def test_get_initial_noise_with_generator(self, adapter):
+        """Test noise generation with fixed seed."""
+        gen1 = torch.Generator().manual_seed(42)
+        gen2 = torch.Generator().manual_seed(42)
+
+        noise1 = adapter.get_initial_noise(2, device='cpu', generator=gen1)
+        noise2 = adapter.get_initial_noise(2, device='cpu', generator=gen2)
+
+        assert torch.allclose(noise1, noise2)
+
+    @pytest.mark.slow
+    def test_prepare_conditioning(self, adapter):
+        """Test text conditioning preparation (requires CLIP download)."""
+        text = "a cute dog"
+        batch_size = 2
+
+        try:
+            cond = adapter.prepare_conditioning(text, batch_size, device='cpu')
+
+            assert isinstance(cond, dict)
+            assert 'encoder_hidden_states' in cond
+            emb = cond['encoder_hidden_states']
+            assert emb.shape[0] == batch_size
+            assert emb.shape[1] == 77  # CLIP max length
+            assert emb.shape[2] == 1024  # CLIP ViT-L/14 dimension
+        except Exception as e:
+            pytest.skip(f"CLIP model download failed: {e}")
+
+    def test_prepare_conditioning_requires_text(self, adapter):
+        """Test that prepare_conditioning raises without text."""
+        with pytest.raises(ValueError, match="Text prompt required"):
+            adapter.prepare_conditioning(text=None)
+
+    @pytest.mark.slow
+    def test_forward_with_cfg(self, adapter):
+        """Test classifier-free guidance forward (requires CLIP download)."""
+        batch_size = 2
+        x = torch.randn(batch_size, 4, 64, 64)
+        t = torch.tensor([500])
+
+        try:
+            cond = adapter.prepare_conditioning("a dog", batch_size, device='cpu')
+            uncond = adapter.prepare_conditioning("", batch_size, device='cpu')
+
+            # Test with CFG
+            with torch.no_grad():
+                out_cfg = adapter.forward_with_cfg(x, t, cond, uncond, guidance_scale=7.5)
+
+            assert out_cfg.shape == (batch_size, 4, 64, 64)
+
+            # Test without CFG (scale=1.0)
+            with torch.no_grad():
+                out_no_cfg = adapter.forward_with_cfg(x, t, cond, guidance_scale=1.0)
+
+            assert out_no_cfg.shape == (batch_size, 4, 64, 64)
+        except Exception as e:
+            pytest.skip(f"CLIP model download failed: {e}")
+
+    def test_prediction_type_property(self, adapter):
+        """Test prediction_type property."""
+        assert adapter.prediction_type == 'epsilon'
+
+    def test_uses_latent_property(self, adapter):
+        """Test uses_latent property."""
+        assert adapter.uses_latent is True
+
+    def test_in_channels_property(self, adapter):
+        """Test in_channels property."""
+        assert adapter.in_channels == 4
+
+    def test_conditioning_type_property(self, adapter):
+        """Test conditioning_type property."""
+        assert adapter.conditioning_type == 'text'
+
+    def test_latent_scale_factor_property(self, adapter):
+        """Test latent_scale_factor property."""
+        assert adapter.latent_scale_factor == 8

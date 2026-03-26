@@ -121,6 +121,142 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
             class_labels = torch.zeros(x.shape[0], 1000, device=x.device)
         return self._model(x, sigma, class_labels)
 
+    def get_timesteps(
+        self,
+        num_steps: int,
+        device: str = 'cuda',
+        sigma_max: float = 80.0,
+        sigma_min: float = 0.002,
+        rho: float = 7.0
+    ) -> torch.Tensor:
+        """
+        Return Karras sigma schedule for EDM.
+
+        Args:
+            num_steps: Number of denoising steps
+            device: Target device
+            sigma_max: Maximum noise level (default: 80.0)
+            sigma_min: Minimum noise level (default: 0.002)
+            rho: Schedule curvature parameter (default: 7.0)
+
+        Returns:
+            Sigma tensor (num_steps + 1,) from sigma_max to 0
+        """
+        # MPS doesn't support float64, use float32 instead
+        high_prec_dtype = torch.float64 if device != 'mps' else torch.float32
+
+        step_indices = torch.arange(num_steps, dtype=high_prec_dtype, device=device)
+        t_steps = (
+            sigma_max ** (1 / rho) +
+            step_indices / (num_steps - 1) * (sigma_min ** (1 / rho) - sigma_max ** (1 / rho))
+        ) ** rho
+
+        # Append t_N = 0
+        return torch.cat([
+            self._model.round_sigma(t_steps),
+            torch.zeros_like(t_steps[:1])
+        ])
+
+    def step(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor,
+        t_next: Optional[torch.Tensor] = None,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Euler step for EDM sampling.
+
+        Args:
+            x_t: Current noisy sample (B, C, H, W)
+            t: Current sigma value (scalar or (B,))
+            model_output: Denoised output from forward() (B, C, H, W)
+            t_next: Next sigma value (required for EDM)
+            **kwargs: Unused
+
+        Returns:
+            x_{t-1}: Next (less noisy) sample
+        """
+        if t_next is None:
+            raise ValueError("EDM step() requires t_next parameter")
+
+        # Euler step: x_next = x + (t_next - t) * dx/dt
+        d_cur = (x_t - model_output) / t
+        return x_t + (t_next - t) * d_cur
+
+    def get_initial_noise(
+        self,
+        batch_size: int,
+        device: str = 'cuda',
+        generator: Optional[torch.Generator] = None,
+        sigma_max: float = 80.0
+    ) -> torch.Tensor:
+        """
+        Generate initial noise for EDM sampling.
+
+        Args:
+            batch_size: Number of samples
+            device: Target device
+            generator: Optional RNG for reproducibility
+            sigma_max: Maximum noise level (default: 80.0)
+
+        Returns:
+            Noise tensor (B, 3, 64, 64) scaled by sigma_max
+        """
+        noise = torch.randn(
+            batch_size, 3, self.resolution, self.resolution,
+            device=device,
+            generator=generator
+        )
+        return noise * sigma_max
+
+    def prepare_conditioning(
+        self,
+        class_label: Optional[int] = None,
+        batch_size: int = 1,
+        device: str = 'cuda',
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Prepare class conditioning for EDM.
+
+        Args:
+            class_label: Single class ID (0-999) or None for random
+            batch_size: Number of samples
+            device: Target device
+            **kwargs: Unused
+
+        Returns:
+            One-hot class labels (B, 1000)
+        """
+        if class_label is not None:
+            labels = torch.full((batch_size,), class_label, device=device, dtype=torch.long)
+        else:
+            labels = torch.randint(0, self.num_classes, (batch_size,), device=device)
+
+        return torch.eye(self.num_classes, device=device)[labels]
+
+    @property
+    def prediction_type(self) -> str:
+        """EDM predicts denoised sample x0."""
+        return 'sample'
+
+    @property
+    def uses_latent(self) -> bool:
+        """EDM operates in pixel space."""
+        return False
+
+    @property
+    def in_channels(self) -> int:
+        """EDM uses 3-channel RGB input."""
+        return 3
+
+    @property
+    def conditioning_type(self) -> str:
+        """EDM uses class conditioning."""
+        return 'class'
+
     def sample(
         self,
         num_samples: int,
