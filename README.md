@@ -86,19 +86,23 @@ for h in handles:
 Adapters now expose a unified interface for diffusion sampling:
 
 ```python
+# Get sampling defaults from adapter
+config = adapter.get_default_config()
+num_steps = config.get('default_steps', 50)
+
 # Generate noise schedule
-timesteps = adapter.get_timesteps(num_steps=50, device='cuda')
+timesteps = adapter.get_timesteps(num_steps=num_steps, device='cuda')
 
 # Initialize noise
 x = adapter.get_initial_noise(batch_size=4, device='cuda')
 
 # Prepare conditioning
-cond = adapter.prepare_conditioning(text="a cat", batch_size=4)
-# or for class-conditional: cond = adapter.prepare_conditioning(class_label=281)
+cond = adapter.prepare_conditioning(text="a cat", batch_size=4)       # text models
+# or: cond = adapter.prepare_conditioning(class_label=281, batch_size=4)  # class models
 
-# Sampling loop
+# Sampling loop with classifier-free guidance
 for i, t in enumerate(timesteps[:-1]):
-    # Forward with classifier-free guidance (text models)
+    # CFG works for both text and class-conditional models
     pred = adapter.forward_with_cfg(x, t, cond, guidance_scale=7.5)
 
     # Single denoising step
@@ -107,6 +111,16 @@ for i, t in enumerate(timesteps[:-1]):
 # Decode to pixel space (latent models) or identity (pixel models)
 images = adapter.decode(x)
 ```
+
+### Sampling Defaults
+
+Each adapter provides sensible defaults via `get_default_config()`:
+
+| Adapter | `default_steps` | `sigma_max` | `sigma_min` | Notes |
+|---------|----------------|-------------|-------------|-------|
+| EDM | 50 | 80.0 | 0.002 | Karras schedule, `rho=7.0` |
+| DMD2 | 5 | 80.0 | 0.5 | Distilled for few-step |
+| MSCOCO T2I | 20 | — | — | DDPM timesteps, `guidance_scale=7.5` |
 
 ### Adapter Properties
 
@@ -245,12 +259,12 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
 
 ## Supported Models
 
-| Model | Adapter Name | Resolution | Description |
-|-------|--------------|------------|-------------|
-| AbU Custom SD | `abu-custom-sd14` | 512x512 | AttributeByUnlearning SD v1.4 concept fine-tuning |
-| DMD2 | `dmd2-imagenet-64` | 64x64 | Distribution Matching Distillation (1-10 steps) |
-| EDM | `edm-imagenet-64` | 64x64 | Elucidating Diffusion Models (50-256 steps) |
-| MSCOCO T2I | `mscoco-t2i-128` | 128x128 | Text-to-image diffusion (1000 steps, latent space) |
+| Model | Adapter Name | Resolution | Conditioning | CFG | Description |
+|-------|--------------|------------|--------------|-----|-------------|
+| AbU Custom SD | `abu-custom-sd14` | 512x512 | text | ✓ | AttributeByUnlearning SD v1.4 |
+| DMD2 | `dmd2-imagenet-64` | 64x64 | class | ✓ | Distribution Matching Distillation (1-10 steps) |
+| EDM | `edm-imagenet-64` | 64x64 | class | ✓ | Elucidating Diffusion Models (50-256 steps) |
+| MSCOCO T2I | `mscoco-t2i-128` | 128x128 | text | ✓ | Text-to-image diffusion (latent space) |
 
 ## Checkpoints
 

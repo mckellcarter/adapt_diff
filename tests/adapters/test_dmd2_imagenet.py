@@ -187,17 +187,30 @@ class TestDMD2ImageNetAdapterDiffusionMethods:
         assert torch.allclose(encoded, img)
         assert torch.allclose(decoded, img)
 
-    def test_forward_with_cfg_not_supported(self, mock_adapter):
-        """Test that CFG raises NotImplementedError for class-conditional."""
+    def test_forward_with_cfg(self, mock_adapter):
+        """Test that CFG works for class-conditional models."""
         x = torch.randn(1, 3, 64, 64)
         t = torch.tensor([10.0])
         cond = torch.eye(1000)[207:208]  # class 207
         uncond = torch.zeros(1, 1000)
 
-        with pytest.raises(NotImplementedError, match="classifier-free guidance"):
-            mock_adapter.forward_with_cfg(
-                x, t, cond, uncond, guidance_scale=2.0
-            )
+        # CFG with guidance_scale > 1.0 should work
+        output = mock_adapter.forward_with_cfg(
+            x, t, cond, uncond, guidance_scale=2.0
+        )
+        assert output.shape == (1, 3, 64, 64)
+
+    def test_forward_with_cfg_default_uncond(self, mock_adapter):
+        """Test that CFG uses zeros as default uncond."""
+        x = torch.randn(1, 3, 64, 64)
+        t = torch.tensor([10.0])
+        cond = torch.eye(1000)[207:208]  # class 207
+
+        # Should work without explicit uncond (defaults to zeros)
+        output = mock_adapter.forward_with_cfg(
+            x, t, cond, guidance_scale=2.0
+        )
+        assert output.shape == (1, 3, 64, 64)
 
     def test_forward_with_cfg_scale_1(self, mock_adapter):
         """Test that scale=1.0 works (no CFG)."""

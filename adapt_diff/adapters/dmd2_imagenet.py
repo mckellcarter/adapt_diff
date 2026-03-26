@@ -231,6 +231,44 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         """DMD2 uses class conditioning."""
         return 'class'
 
+    def forward_with_cfg(
+        self,
+        x: torch.Tensor,
+        t: torch.Tensor,
+        cond: torch.Tensor,
+        uncond: Optional[torch.Tensor] = None,
+        guidance_scale: float = 1.0,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Forward with classifier-free guidance for class conditioning.
+
+        Args:
+            x: Noisy input (B, C, H, W)
+            t: Sigma value (scalar or (B,))
+            cond: Conditional one-hot class labels (B, 1000)
+            uncond: Unconditional class labels (B, 1000), defaults to zeros
+            guidance_scale: CFG scale (1.0 = no guidance)
+            **kwargs: Passed to forward()
+
+        Returns:
+            Guided denoised output (B, C, H, W)
+        """
+        if guidance_scale == 1.0:
+            return self.forward(x, t, class_labels=cond, **kwargs)
+
+        if uncond is None:
+            uncond = torch.zeros_like(cond)
+
+        # Unconditional forward (null class)
+        uncond_out = self.forward(x, t, class_labels=uncond, **kwargs)
+
+        # Conditional forward
+        cond_out = self.forward(x, t, class_labels=cond, **kwargs)
+
+        # CFG: uncond + scale * (cond - uncond)
+        return uncond_out + guidance_scale * (cond_out - uncond_out)
+
     def register_activation_hooks(
         self,
         layer_names: List[str],
@@ -317,10 +355,12 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             "img_channels": 3,
             "label_dim": 1000,
             "use_fp16": False,
-            "sigma_min": 0,
-            "sigma_max": float("inf"),
             "sigma_data": 0.5,
-            "model_type": "DhariwalUNet"
+            "model_type": "DhariwalUNet",
+            # Sampling defaults (DMD2 is distilled for few-step generation)
+            "sigma_max": 80.0,
+            "sigma_min": 0.5,
+            "default_steps": 5,
         }
 
     def to(self, device: str) -> 'DMD2ImageNetAdapter':

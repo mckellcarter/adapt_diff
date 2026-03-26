@@ -146,6 +146,7 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         x_t: torch.Tensor,
         t: torch.Tensor,
         model_output: torch.Tensor,
+        t_next: Optional[torch.Tensor] = None,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -155,11 +156,13 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             x_t: Current noisy latent (B, 4, 16, 16)
             t: Current timestep (scalar or (B,))
             model_output: Predicted noise from forward() (B, 4, 16, 16)
+            t_next: Unused (accepted for API consistency with sigma-based models)
             **kwargs: Passed to scheduler.step() (e.g., generator, eta)
 
         Returns:
             x_{t-1}: Less noisy latent
         """
+        # t_next is ignored - scheduler handles timestep progression internally
         return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
 
     def get_initial_noise(
@@ -518,6 +521,9 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             "cross_attention_dim": 1024,
             "num_train_timesteps": 1000,
             "block_out_channels": [128, 256, 256, 256],
+            # Sampling defaults
+            "default_steps": 20,
+            "guidance_scale": 7.5,
         }
 
     def to(self, device: str) -> 'MSCOCOT2IAdapter':
