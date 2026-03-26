@@ -127,6 +127,197 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             return_dict=False
         )[0]
 
+    def get_timesteps(self, num_steps: int, device: str = 'cuda') -> torch.Tensor:
+        """
+        Return DDPM timestep schedule.
+
+        Args:
+            num_steps: Number of denoising steps
+            device: Target device
+
+        Returns:
+            Timesteps tensor (num_steps,) in descending order [999, ..., 0]
+        """
+        self._scheduler.set_timesteps(num_steps, device=device)
+        return self._scheduler.timesteps
+
+    def step(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        DDPM denoising step via scheduler.
+
+        Args:
+            x_t: Current noisy latent (B, 4, 16, 16)
+            t: Current timestep (scalar or (B,))
+            model_output: Predicted noise from forward() (B, 4, 16, 16)
+            **kwargs: Passed to scheduler.step() (e.g., generator, eta)
+
+        Returns:
+            x_{t-1}: Less noisy latent
+        """
+        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
+
+    def get_initial_noise(
+        self,
+        batch_size: int,
+        device: str = 'cuda',
+        generator: Optional[torch.Generator] = None
+    ) -> torch.Tensor:
+        """
+        Generate initial latent noise.
+
+        Args:
+            batch_size: Number of samples
+            device: Target device
+            generator: Optional RNG for reproducibility
+
+        Returns:
+            Noise tensor (B, 4, 16, 16) with unit variance
+        """
+        return torch.randn(
+            batch_size, 4, 16, 16,
+            device=device,
+            generator=generator
+        )
+
+    def prepare_conditioning(
+        self,
+        text: Optional[str] = None,
+        batch_size: int = 1,
+        device: str = 'cuda',
+        **kwargs
+    ) -> Dict[str, torch.Tensor]:
+        """
+        Prepare text conditioning for MSCOCO T2I.
+
+        Args:
+            text: Text prompt
+            batch_size: Number of samples (text is repeated batch_size times)
+            device: Target device
+            **kwargs: Unused
+
+        Returns:
+            Dict with 'encoder_hidden_states' key containing text embeddings
+
+        Raises:
+            ValueError: If text is None
+        """
+        if text is None:
+            raise ValueError("Text prompt required for MSCOCO T2I model")
+
+        # Load CLIP model if not already loaded
+        if not hasattr(self, '_clip_tokenizer'):
+            from transformers import CLIPTokenizer, CLIPTextModel
+            self._clip_tokenizer = CLIPTokenizer.from_pretrained(
+                "openai/clip-vit-large-patch14"
+            )
+            self._clip_text_encoder = CLIPTextModel.from_pretrained(
+                "openai/clip-vit-large-patch14"
+            ).to(device)
+            self._clip_text_encoder.eval()
+
+        # Tokenize and encode text
+        tokens = self._clip_tokenizer(
+            text,
+            padding="max_length",
+            max_length=77,
+            truncation=True,
+            return_tensors="pt"
+        ).input_ids.to(device)
+
+        with torch.no_grad():
+            embeddings = self._clip_text_encoder(tokens)[0]
+
+        # Repeat for batch
+        if batch_size > 1:
+            embeddings = embeddings.repeat(batch_size, 1, 1)
+
+        return {"encoder_hidden_states": embeddings}
+
+    def forward_with_cfg(
+        self,
+        x: torch.Tensor,
+        t: torch.Tensor,
+        cond: Dict[str, torch.Tensor],
+        uncond: Optional[Dict[str, torch.Tensor]] = None,
+        guidance_scale: float = 7.5,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Forward with classifier-free guidance.
+
+        Args:
+            x: Noisy latent (B, 4, 16, 16)
+            t: Timestep
+            cond: Conditional dict with 'encoder_hidden_states'
+            uncond: Unconditional dict (if None, uses empty text "")
+            guidance_scale: CFG scale (1.0 = no guidance)
+            **kwargs: Passed to forward()
+
+        Returns:
+            Guided noise prediction
+        """
+        if guidance_scale == 1.0 or uncond is None:
+            return self.forward(x, t, **cond, **kwargs)
+
+        # Unconditional forward
+        uncond_out = self.forward(x, t, **uncond, **kwargs)
+
+        # Conditional forward
+        cond_out = self.forward(x, t, **cond, **kwargs)
+
+        # CFG: uncond + scale * (cond - uncond)
+        return uncond_out + guidance_scale * (cond_out - uncond_out)
+
+    def encode(self, images: torch.Tensor) -> torch.Tensor:
+        """
+        Encode images to latent space.
+
+        Args:
+            images: Pixel-space images (B, 3, 128, 128), range [-1, 1]
+
+        Returns:
+            Latent tensor (B, 4, 16, 16)
+        """
+        return self.encode_images(images)
+
+    def decode(self, representation: torch.Tensor) -> torch.Tensor:
+        """
+        Decode latents to pixel space.
+
+        Args:
+            representation: Latent tensor (B, 4, 16, 16)
+
+        Returns:
+            Images (B, 3, 128, 128), range [-1, 1]
+        """
+        return self.decode_latents(representation)
+
+    @property
+    def prediction_type(self) -> str:
+        """MSCOCO T2I predicts noise (epsilon)."""
+        return 'epsilon'
+
+    @property
+    def uses_latent(self) -> bool:
+        """MSCOCO T2I operates in latent space."""
+        return True
+
+    @property
+    def in_channels(self) -> int:
+        """MSCOCO T2I uses 4-channel latent input."""
+        return 4
+
+    @property
+    def conditioning_type(self) -> str:
+        """MSCOCO T2I uses text conditioning."""
+        return 'text'
+
     def register_activation_hooks(
         self,
         layer_names: List[str],
@@ -184,12 +375,22 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         """
         Decode latents to pixel space using VAE.
 
+        .. deprecated::
+            Use :meth:`decode` instead.
+
         Args:
             latents: Latent tensor (B, 4, 16, 16)
 
         Returns:
             Images in pixel space (B, 3, 128, 128), range [-1, 1]
         """
+        import warnings
+        warnings.warn(
+            "decode_latents() is deprecated, use decode() instead",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         if self._vae is None:
             raise ValueError("VAE not provided. Pass vae to from_checkpoint().")
 
@@ -205,12 +406,22 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         """
         Encode images to latent space using VAE.
 
+        .. deprecated::
+            Use :meth:`encode` instead.
+
         Args:
             images: Images in pixel space (B, 3, 128, 128), range [-1, 1]
 
         Returns:
             Latent tensor (B, 4, 16, 16)
         """
+        import warnings
+        warnings.warn(
+            "encode_images() is deprecated, use encode() instead",
+            DeprecationWarning,
+            stacklevel=2
+        )
+
         if self._vae is None:
             raise ValueError("VAE not provided. Pass vae to from_checkpoint().")
 

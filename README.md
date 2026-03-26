@@ -81,6 +81,45 @@ for h in handles:
     h.remove()
 ```
 
+## Diffusion Sampling Interface
+
+Adapters now expose a unified interface for diffusion sampling:
+
+```python
+# Generate noise schedule
+timesteps = adapter.get_timesteps(num_steps=50, device='cuda')
+
+# Initialize noise
+x = adapter.get_initial_noise(batch_size=4, device='cuda')
+
+# Prepare conditioning
+cond = adapter.prepare_conditioning(text="a cat", batch_size=4)
+# or for class-conditional: cond = adapter.prepare_conditioning(class_label=281)
+
+# Sampling loop
+for i, t in enumerate(timesteps[:-1]):
+    # Forward with classifier-free guidance (text models)
+    pred = adapter.forward_with_cfg(x, t, cond, guidance_scale=7.5)
+
+    # Single denoising step
+    x = adapter.step(x, t, pred, t_next=timesteps[i+1])
+
+# Decode to pixel space (latent models) or identity (pixel models)
+images = adapter.decode(x)
+```
+
+### Adapter Properties
+
+All adapters expose metadata about their architecture:
+
+```python
+adapter.prediction_type      # 'epsilon', 'sample', or 'v_prediction'
+adapter.uses_latent          # True for latent-space models (SD), False for pixel-space
+adapter.in_channels          # 3 (RGB) or 4 (SD latent)
+adapter.conditioning_type    # 'text', 'class', or 'unconditional'
+adapter.latent_scale_factor  # 8 for SD (512→64), 1 for pixel models
+```
+
 ## Creating a Custom Adapter
 
 ```python
@@ -93,6 +132,7 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
         self._model = model
         self._device = device
 
+    # ============ Basic Properties ============
     @property
     def model_type(self): return 'my-model'
 
@@ -106,6 +146,20 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
     def hookable_layers(self):
         return ['encoder', 'decoder', 'mid']
 
+    # ============ Diffusion Properties ============
+    @property
+    def prediction_type(self): return 'epsilon'  # or 'sample', 'v_prediction'
+
+    @property
+    def uses_latent(self): return False  # True if latent-space model
+
+    @property
+    def in_channels(self): return 3  # or 4 for latent models
+
+    @property
+    def conditioning_type(self): return 'class'  # or 'text', 'unconditional'
+
+    # ============ Core Methods ============
     def forward(self, x, sigma, class_labels=None, **kwargs):
         return self._model(x, sigma, class_labels)
 
@@ -121,6 +175,59 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
     def get_layer_shapes(self):
         return {'encoder': (512, 16, 16), 'decoder': (256, 32, 32), 'mid': (512, 8, 8)}
 
+    # ============ Diffusion Methods ============
+    def get_timesteps(self, num_steps, device='cuda'):
+        """Return noise schedule (timesteps or sigmas)."""
+        # For timestep models (DDPM):
+        self._scheduler.set_timesteps(num_steps, device=device)
+        return self._scheduler.timesteps
+        # For sigma models (EDM):
+        # return torch.linspace(sigma_max, sigma_min, num_steps+1, device=device)
+
+    def step(self, x_t, t, model_output, **kwargs):
+        """Single denoising step: x_t → x_{t-1}."""
+        # For timestep models:
+        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
+        # For sigma models with t_next in kwargs:
+        # d = (x_t - model_output) / t
+        # return x_t + (kwargs['t_next'] - t) * d
+
+    def get_initial_noise(self, batch_size, device='cuda', generator=None):
+        """Generate initial noise with correct shape."""
+        return torch.randn(batch_size, self.in_channels,
+                          self.resolution, self.resolution,
+                          device=device, generator=generator)
+
+    def prepare_conditioning(self, text=None, class_label=None,
+                           batch_size=1, device='cuda', **kwargs):
+        """Prepare model-ready conditioning."""
+        # For class-conditional:
+        if class_label is not None:
+            labels = torch.full((batch_size,), class_label, device=device)
+        else:
+            labels = torch.randint(0, self.num_classes, (batch_size,), device=device)
+        return torch.eye(self.num_classes, device=device)[labels]
+        # For text-conditional: encode text with CLIP and return embeddings dict
+
+    # Optional: Override for latent-space models
+    def encode(self, images):
+        """Encode images to latent space (override for VAE models)."""
+        return self._vae.encode(images).latent_dist.sample() * 0.18215
+
+    def decode(self, latents):
+        """Decode latents to pixel space (override for VAE models)."""
+        return self._vae.decode(latents / 0.18215).sample
+
+    # Optional: Override for CFG-capable models
+    def forward_with_cfg(self, x, t, cond, uncond=None, guidance_scale=1.0, **kwargs):
+        """Classifier-free guidance (override for text models)."""
+        if guidance_scale == 1.0 or uncond is None:
+            return self.forward(x, t, **cond, **kwargs)
+        uncond_out = self.forward(x, t, **uncond, **kwargs)
+        cond_out = self.forward(x, t, **cond, **kwargs)
+        return uncond_out + guidance_scale * (cond_out - uncond_out)
+
+    # ============ Class Methods ============
     @classmethod
     def from_checkpoint(cls, checkpoint_path, device='cuda', **kwargs):
         model = load_my_model(checkpoint_path)
@@ -128,7 +235,12 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
 
     @classmethod
     def get_default_config(cls):
-        return {'resolution': 256, 'channels': 3}
+        return {
+            'img_resolution': 256,
+            'in_channels': 3,
+            'prediction_type': 'epsilon',
+            'uses_latent': False
+        }
 ```
 
 ## Supported Models

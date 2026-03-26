@@ -99,6 +99,138 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             class_labels = torch.zeros(x.shape[0], 1000, device=x.device)
         return self._model(x, sigma, class_labels)
 
+    def get_timesteps(
+        self,
+        num_steps: int,
+        device: str = 'cuda',
+        sigma_max: float = 80.0,
+        sigma_min: float = 0.002
+    ) -> torch.Tensor:
+        """
+        Return logarithmic sigma schedule for DMD2.
+
+        DMD2 is a distilled model designed for 1-10 steps with log-spaced sigmas.
+
+        Args:
+            num_steps: Number of denoising steps (typically 1-10)
+            device: Target device
+            sigma_max: Maximum noise level (default: 80.0)
+            sigma_min: Minimum noise level (default: 0.002)
+
+        Returns:
+            Sigma tensor (num_steps + 1,) from sigma_max to 0
+            Example for 6 steps: [80, 33, 10, 3, 1, 0.5, 0]
+        """
+        # Log-linear interpolation in log space, then append 0
+        sigmas = torch.logspace(
+            torch.log10(torch.tensor(sigma_max)),
+            torch.log10(torch.tensor(sigma_min)),
+            num_steps,
+            device=device
+        )
+        # Append final sigma = 0
+        return torch.cat([sigmas, torch.zeros(1, device=device)])
+
+    def step(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor,
+        t_next: Optional[torch.Tensor] = None,
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Euler step for DMD2 sampling.
+
+        Args:
+            x_t: Current noisy sample (B, C, H, W)
+            t: Current sigma value (scalar or (B,))
+            model_output: Denoised output from forward() (B, C, H, W)
+            t_next: Next sigma value (required)
+            **kwargs: Unused
+
+        Returns:
+            x_{t-1}: Next (less noisy) sample
+        """
+        if t_next is None:
+            raise ValueError("DMD2 step() requires t_next parameter")
+
+        # Euler step: x_next = x + (t_next - t) * dx/dt
+        d_cur = (x_t - model_output) / t
+        return x_t + (t_next - t) * d_cur
+
+    def get_initial_noise(
+        self,
+        batch_size: int,
+        device: str = 'cuda',
+        generator: Optional[torch.Generator] = None,
+        sigma_max: float = 80.0
+    ) -> torch.Tensor:
+        """
+        Generate initial noise for DMD2 sampling.
+
+        Args:
+            batch_size: Number of samples
+            device: Target device
+            generator: Optional RNG for reproducibility
+            sigma_max: Maximum noise level (default: 80.0)
+
+        Returns:
+            Noise tensor (B, 3, 64, 64) scaled by sigma_max
+        """
+        noise = torch.randn(
+            batch_size, 3, self.resolution, self.resolution,
+            device=device,
+            generator=generator
+        )
+        return noise * sigma_max
+
+    def prepare_conditioning(
+        self,
+        class_label: Optional[int] = None,
+        batch_size: int = 1,
+        device: str = 'cuda',
+        **kwargs
+    ) -> torch.Tensor:
+        """
+        Prepare class conditioning for DMD2.
+
+        Args:
+            class_label: Single class ID (0-999) or None for random
+            batch_size: Number of samples
+            device: Target device
+            **kwargs: Unused
+
+        Returns:
+            One-hot class labels (B, 1000)
+        """
+        if class_label is not None:
+            labels = torch.full((batch_size,), class_label, device=device, dtype=torch.long)
+        else:
+            labels = torch.randint(0, self.num_classes, (batch_size,), device=device)
+
+        return torch.eye(self.num_classes, device=device)[labels]
+
+    @property
+    def prediction_type(self) -> str:
+        """DMD2 predicts denoised sample x0."""
+        return 'sample'
+
+    @property
+    def uses_latent(self) -> bool:
+        """DMD2 operates in pixel space."""
+        return False
+
+    @property
+    def in_channels(self) -> int:
+        """DMD2 uses 3-channel RGB input."""
+        return 3
+
+    @property
+    def conditioning_type(self) -> str:
+        """DMD2 uses class conditioning."""
+        return 'class'
+
     def register_activation_hooks(
         self,
         layer_names: List[str],
