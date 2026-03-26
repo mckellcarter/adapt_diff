@@ -165,13 +165,17 @@ class GeneratorAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_timesteps(self, num_steps: int, device: str = 'cuda') -> torch.Tensor:
+    def get_timesteps(self, num_steps: int, device: str = 'cuda', **kwargs) -> torch.Tensor:
         """
         Return noise schedule for sampling with num_steps.
 
         Args:
             num_steps: Number of denoising steps
             device: Target device for tensor
+            **kwargs: Model-specific schedule parameters (adapters use what they need):
+                - sigma_max, sigma_min: Noise level bounds (sigma-based models)
+                - rho: Karras schedule parameter (EDM)
+                - Ignored by timestep-based models (DDPM)
 
         Returns:
             Timesteps/sigmas tensor (num_steps,) or (num_steps+1,)

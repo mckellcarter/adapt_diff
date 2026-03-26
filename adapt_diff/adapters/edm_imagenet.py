@@ -127,7 +127,8 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         device: str = 'cuda',
         sigma_max: float = 80.0,
         sigma_min: float = 0.002,
-        rho: float = 7.0
+        rho: float = 7.0,
+        **kwargs  # For API extensibility
     ) -> torch.Tensor:
         """
         Return Karras sigma schedule for EDM.
@@ -138,6 +139,7 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
             sigma_max: Maximum noise level (default: 80.0)
             sigma_min: Minimum noise level (default: 0.002)
             rho: Schedule curvature parameter (default: 7.0)
+            **kwargs: Ignored (for API extensibility)
 
         Returns:
             Sigma tensor (num_steps + 1,) from sigma_max to 0

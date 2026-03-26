@@ -104,7 +104,8 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         num_steps: int,
         device: str = 'cuda',
         sigma_max: float = 80.0,
-        sigma_min: float = 0.002
+        sigma_min: float = 0.002,
+        **kwargs  # Accept rho etc for API consistency, ignored
     ) -> torch.Tensor:
         """
         Return logarithmic sigma schedule for DMD2.
@@ -116,6 +117,7 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             device: Target device
             sigma_max: Maximum noise level (default: 80.0)
             sigma_min: Minimum noise level (default: 0.002)
+            **kwargs: Ignored (for API consistency with other adapters)
 
         Returns:
             Sigma tensor (num_steps + 1,) from sigma_max to 0

@@ -127,13 +127,14 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             return_dict=False
         )[0]
 
-    def get_timesteps(self, num_steps: int, device: str = 'cuda') -> torch.Tensor:
+    def get_timesteps(self, num_steps: int, device: str = 'cuda', **kwargs) -> torch.Tensor:
         """
         Return DDPM timestep schedule.
 
         Args:
             num_steps: Number of denoising steps
             device: Target device
+            **kwargs: Ignored (sigma params not applicable to DDPM)
 
         Returns:
             Timesteps tensor (num_steps,) in descending order [999, ..., 0]
