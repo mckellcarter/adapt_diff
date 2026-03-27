@@ -214,14 +214,16 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         if text is None:
             raise ValueError("Text prompt required for MSCOCO T2I model")
 
-        # Load CLIP model if not already loaded
+        # Load SD2 text encoder (OpenCLIP ViT-H/14, 1024-dim output)
+        # Must match what model was trained with (stabilityai/stable-diffusion-2)
         if not hasattr(self, '_clip_tokenizer'):
             from transformers import CLIPTokenizer, CLIPTextModel
+            sd2_text_encoder = "stabilityai/stable-diffusion-2"
             self._clip_tokenizer = CLIPTokenizer.from_pretrained(
-                "openai/clip-vit-large-patch14"
+                sd2_text_encoder, subfolder="tokenizer"
             )
             self._clip_text_encoder = CLIPTextModel.from_pretrained(
-                "openai/clip-vit-large-patch14"
+                sd2_text_encoder, subfolder="text_encoder"
             ).to(device)
             self._clip_text_encoder.eval()
 
