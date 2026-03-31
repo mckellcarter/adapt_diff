@@ -613,7 +613,7 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             "block_out_channels": [128, 256, 256, 256],
             # Sampling defaults (noise_level 0-100 scale)
             "noise_max": 100.0,
-            "noise_min": 0.0,
+            "noise_min": 0.5,
             "default_steps": 20,
             "guidance_scale": 7.5,
         }
