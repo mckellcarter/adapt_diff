@@ -105,8 +105,9 @@ for i, t in enumerate(timesteps[:-1]):
     # CFG works for both text and class-conditional models
     pred = adapter.forward_with_cfg(x, t, cond, guidance_scale=7.5)
 
-    # Single denoising step
-    x = adapter.step(x, t, pred, t_next=timesteps[i+1])
+    # Single denoising step (optionally return predicted x0 for visualization)
+    x, pred_x0 = adapter.step(x, t, pred, t_next=timesteps[i+1], return_x0=True)
+    # Or without x0: x = adapter.step(x, t, pred, t_next=timesteps[i+1])
 
 # Decode to pixel space (latent models) or identity (pixel models)
 images = adapter.decode(x)
@@ -198,13 +199,21 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
         # For sigma models (EDM):
         # return torch.linspace(sigma_max, sigma_min, num_steps+1, device=device)
 
-    def step(self, x_t, t, model_output, **kwargs):
-        """Single denoising step: x_t → x_{t-1}."""
-        # For timestep models:
-        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
-        # For sigma models with t_next in kwargs:
+    def step(self, x_t, t, model_output, return_x0=False, **kwargs):
+        """Single denoising step: x_t → x_{t-1}.
+
+        If return_x0=True, returns (x_{t-1}, pred_x0) for visualization.
+        """
+        # For timestep models (epsilon prediction):
+        output = self._scheduler.step(model_output, t, x_t, **kwargs)
+        if return_x0:
+            return output.prev_sample, output.pred_original_sample
+        return output.prev_sample
+        # For sigma models (x0 prediction) with t_next in kwargs:
         # d = (x_t - model_output) / t
-        # return x_t + (kwargs['t_next'] - t) * d
+        # x_next = x_t + (kwargs['t_next'] - t) * d
+        # if return_x0: return x_next, model_output  # model_output IS x0
+        # return x_next
 
     def get_initial_noise(self, batch_size, device='cuda', generator=None):
         """Generate initial noise with correct shape."""
