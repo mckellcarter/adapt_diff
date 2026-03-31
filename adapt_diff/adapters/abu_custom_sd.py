@@ -312,6 +312,25 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         """Custom Diffusion predicts noise (epsilon)."""
         return 'epsilon'
 
+    def convert_latent_sample(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert epsilon prediction to x₀ for intermediate visualization.
+
+        DDPM formula: x₀ = (x_t - sqrt(1-α_t) * ε) / sqrt(α_t)
+        """
+        t_idx = int(t) if t.dim() == 0 else int(t[0])
+        alpha_prod_t = self._scheduler.alphas_cumprod[t_idx].to(x_t.device)
+
+        sqrt_alpha_t = alpha_prod_t.sqrt()
+        sqrt_one_minus_alpha_t = (1 - alpha_prod_t).sqrt()
+
+        return (x_t - sqrt_one_minus_alpha_t * model_output) / sqrt_alpha_t
+
     @property
     def uses_latent(self) -> bool:
         """Custom Diffusion operates in latent space."""
