@@ -17,6 +17,18 @@ class GeneratorAdapter(ABC):
 
     This allows the visualizer to work with any diffusion architecture
     (EDM, DDPM, Stable Diffusion, etc.) through a common interface.
+
+    Noise Level Abstraction:
+        All adapters use a universal `noise_level` parameter (0-100) representing
+        the percentage of the noise schedule:
+        - 0 = fully denoised (clean image)
+        - 100 = fully noised (pure noise)
+
+        Each adapter translates this to its native format:
+        - EDM/DMD2: sigma values (log-space interpolation)
+        - DDPM/SD: timesteps (0-999)
+
+        This abstraction allows model-agnostic code to work with any diffusion model.
     """
 
     @property
@@ -112,10 +124,32 @@ class GeneratorAdapter(ABC):
         return 8 if self.uses_latent else 1
 
     @abstractmethod
+    def noise_level_to_native(
+        self,
+        noise_level: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert universal noise_level (0-100) to model's native format.
+
+        Args:
+            noise_level: Noise level as percentage (0-100)
+                - 0 = fully denoised (clean)
+                - 100 = fully noised (pure noise)
+
+        Returns:
+            Native noise parameter:
+                - EDM/DMD2: sigma value
+                - DDPM/SD: timestep (integer 0-999)
+
+        Each adapter implements this based on its noise parameterization.
+        """
+        pass
+
+    @abstractmethod
     def forward(
         self,
         x: torch.Tensor,
-        sigma: torch.Tensor,
+        t: torch.Tensor,
         class_labels: Optional[torch.Tensor] = None,
         **kwargs
     ) -> torch.Tensor:
@@ -124,12 +158,17 @@ class GeneratorAdapter(ABC):
 
         Args:
             x: Noisy input tensor (B, C, H, W)
-            sigma: Noise levels (B,) or scalar
+            t: Native timestep/sigma (B,) or scalar. Use noise_level_to_native()
+                to convert from noise_level (0-100) if needed.
             class_labels: One-hot class labels (B, num_classes) or None
             **kwargs: Model-specific options (e.g., text embeddings)
 
         Returns:
-            Denoised output tensor (B, C, H, W)
+            Model prediction tensor (B, C, H, W). The prediction type varies:
+            - 'sample': returns denoised x0
+            - 'epsilon': returns predicted noise
+            - 'v_prediction': returns velocity
+            Use pred_to_sample() to convert any prediction type to x0.
         """
         pass
 
@@ -164,27 +203,58 @@ class GeneratorAdapter(ABC):
         """
         pass
 
+    def pred_to_sample(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert model output to estimated clean sample (x0).
+
+        This method handles the prediction_type conversion so that callers
+        can always get an x0 estimate regardless of what the model predicts.
+
+        Args:
+            x_t: Current noisy sample (B, C, H, W)
+            t: Current native timestep/sigma (from get_timesteps(), not noise_level)
+            model_output: Raw output from forward() (B, C, H, W)
+
+        Returns:
+            x0: Estimated clean sample (B, C, H, W)
+
+        Default implementation returns model_output unchanged (for sample-prediction).
+        Override in epsilon/v_prediction adapters.
+        """
+        # Default: assume model predicts x0 directly (sample prediction)
+        return model_output
+
     @abstractmethod
-    def get_timesteps(self, num_steps: int, device: str = 'cuda', **kwargs) -> torch.Tensor:
+    def get_timesteps(
+        self,
+        num_steps: int,
+        device: str = 'cuda',
+        noise_level_max: float = 100.0,
+        noise_level_min: float = 0.0,
+        **kwargs
+    ) -> torch.Tensor:
         """
         Return noise schedule for sampling with num_steps.
 
         Args:
             num_steps: Number of denoising steps
             device: Target device for tensor
-            **kwargs: Model-specific schedule parameters (adapters use what they need):
-                - sigma_max, sigma_min: Noise level bounds (sigma-based models)
-                - rho: Karras schedule parameter (EDM)
-                - Ignored by timestep-based models (DDPM)
+            noise_level_max: Starting noise level (0-100), default 100 (pure noise)
+            noise_level_min: Ending noise level (0-100), default 0 (clean)
+            **kwargs: Model-specific schedule parameters (e.g., rho for EDM)
 
         Returns:
-            Timesteps/sigmas tensor (num_steps,) or (num_steps+1,)
-            - For timestep-based (DDPM): integers [0-999] in descending order
-            - For sigma-based (EDM): floats from sigma_max to sigma_min
+            Schedule tensor in the adapter's native format (num_steps,) or (num_steps+1,):
+            - For sigma-based (EDM/DMD2): floats representing sigma values
+            - For timestep-based (DDPM): integers [0-999]
 
-        Implementation differs per noise parameterization:
-            - Timestep models: DDPMScheduler.timesteps after set_timesteps()
-            - Sigma models: Karras schedule with rho parameter
+            The returned values are in native format, not noise_level. Use
+            noise_level_to_native() to convert noise_level to native format.
         """
         pass
 
@@ -203,15 +273,15 @@ class GeneratorAdapter(ABC):
 
         Args:
             x_t: Current noisy sample (B, C, H, W)
-            t: Current timestep/sigma (B,) or scalar
+            t: Current native timestep/sigma (B,) or scalar (from get_timesteps())
             model_output: Raw model output (B, C, H, W)
             **kwargs: Scheduler-specific options (e.g., eta, generator, t_next)
 
         Returns:
             x_{t-1}: Less noisy sample (B, C, H, W)
 
-        Note: This wraps scheduler.step() for timestep models or implements
-        EDM-style stepping for sigma models.
+        Note: The `t` parameter is in native format (sigma or timestep), not noise_level.
+        This is because step() is called in a loop using values from get_timesteps().
         """
         pass
 
@@ -220,7 +290,8 @@ class GeneratorAdapter(ABC):
         self,
         batch_size: int,
         device: str = 'cuda',
-        generator: Optional[torch.Generator] = None
+        generator: Optional[torch.Generator] = None,
+        noise_level: float = 100.0
     ) -> torch.Tensor:
         """
         Generate correctly shaped and scaled initial noise.
@@ -229,12 +300,14 @@ class GeneratorAdapter(ABC):
             batch_size: Number of samples
             device: Target device
             generator: Optional RNG for reproducibility
+            noise_level: Starting noise level (0-100), default 100 (pure noise).
+                Each adapter scales the noise appropriately for its native format.
 
         Returns:
             Initial noise tensor with correct shape and scaling:
             - Latent models: (B, 4, H/8, W/8)
             - Pixel models: (B, 3, H, W)
-            - Scaled appropriately (sigma_max for EDM, unit variance for DDPM)
+            - Scaled appropriately for the noise_level
         """
         pass
 
@@ -308,7 +381,7 @@ class GeneratorAdapter(ABC):
 
         Args:
             x: Noisy input (B, C, H, W)
-            t: Timestep/sigma
+            t: Native timestep/sigma (same as forward())
             cond: Conditional input from prepare_conditioning()
             uncond: Unconditional input (None = use empty/null conditioning)
             guidance_scale: CFG scale (1.0 = no guidance)

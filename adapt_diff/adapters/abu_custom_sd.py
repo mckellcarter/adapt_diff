@@ -106,6 +106,31 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
 
         raise ValueError(f"Unknown layer: {layer_name}")
 
+    # DDPM native timestep range
+    TIMESTEP_MAX = 999
+    TIMESTEP_MIN = 0
+
+    def noise_level_to_native(
+        self,
+        noise_level: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert noise_level (0-100) to DDPM timestep.
+
+        Linear mapping:
+        - noise_level 0 → timestep 0 (fully denoised)
+        - noise_level 100 → timestep 999 (fully noised)
+
+        Args:
+            noise_level: Noise level as percentage (0-100)
+
+        Returns:
+            timestep: DDPM timestep (integer 0-999)
+        """
+        # Linear mapping: timestep = noise_level / 100 * 999
+        timestep = (noise_level / 100.0 * self.TIMESTEP_MAX).long()
+        return timestep
+
     def forward(
         self,
         x: torch.Tensor,
@@ -135,20 +160,73 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
             return_dict=False
         )[0]
 
-    def get_timesteps(self, num_steps: int, device: str = 'cuda', **kwargs) -> torch.Tensor:
+    def pred_to_sample(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert epsilon prediction to estimated x0.
+
+        DDPM formula: x0 = (x_t - sqrt(1 - alpha_t) * eps) / sqrt(alpha_t)
+
+        Args:
+            x_t: Current noisy latent (B, 4, 64, 64)
+            t: Current timestep (scalar or (B,)), integer in [0, 999]
+            model_output: Predicted noise from forward() (B, 4, 64, 64)
+
+        Returns:
+            x0: Estimated clean latent (B, 4, 64, 64)
+        """
+        # Get alpha_cumprod for this timestep
+        t_int = t.long() if t.dim() > 0 else t.long().unsqueeze(0)
+        alpha_prod_t = self._scheduler.alphas_cumprod[t_int].to(x_t.device)
+
+        # Reshape for broadcasting: (B,) -> (B, 1, 1, 1)
+        while alpha_prod_t.dim() < x_t.dim():
+            alpha_prod_t = alpha_prod_t.unsqueeze(-1)
+
+        # x0 = (x_t - sqrt(1 - alpha_t) * eps) / sqrt(alpha_t)
+        x0 = (x_t - (1 - alpha_prod_t).sqrt() * model_output) / alpha_prod_t.sqrt()
+        return x0
+
+    def get_timesteps(
+        self,
+        num_steps: int,
+        device: str = 'cuda',
+        noise_level_max: float = 100.0,
+        noise_level_min: float = 0.0,
+        **kwargs
+    ) -> torch.Tensor:
         """
         Return DDPM timestep schedule.
 
         Args:
             num_steps: Number of denoising steps
             device: Target device
-            **kwargs: Ignored (sigma params not applicable to DDPM)
+            noise_level_max: Starting noise level (0-100), default 100
+            noise_level_min: Ending noise level (0-100), default 0
+            **kwargs: Ignored
 
         Returns:
-            Timesteps tensor (num_steps,) in descending order [999, ..., 0]
+            Timesteps tensor (num_steps,) in descending order
+
+        Note: DDPM scheduler generates its own schedule. noise_level_max/min
+        are used to clip the range if needed.
         """
         self._scheduler.set_timesteps(num_steps, device=device)
-        return self._scheduler.timesteps
+        timesteps = self._scheduler.timesteps
+
+        # Optionally clip to noise_level range
+        if noise_level_max < 100.0 or noise_level_min > 0.0:
+            t_max = int(self.noise_level_to_native(torch.tensor(noise_level_max)))
+            t_min = int(self.noise_level_to_native(torch.tensor(noise_level_min)))
+            # Filter timesteps to the range
+            mask = (timesteps <= t_max) & (timesteps >= t_min)
+            timesteps = timesteps[mask]
+
+        return timesteps
 
     def step(
         self,
@@ -175,7 +253,8 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         self,
         batch_size: int,
         device: str = 'cuda',
-        generator: Optional[torch.Generator] = None
+        generator: Optional[torch.Generator] = None,
+        noise_level: float = 100.0
     ) -> torch.Tensor:
         """
         Generate initial latent noise.
@@ -184,15 +263,22 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
             batch_size: Number of samples
             device: Target device
             generator: Optional RNG for reproducibility
+            noise_level: Starting noise level (0-100), default 100.
+                For DDPM, noise_level=100 gives unit variance noise.
+                Lower values scale down the noise magnitude.
 
         Returns:
-            Noise tensor (B, 4, 64, 64) with unit variance
+            Noise tensor (B, 4, 64, 64)
         """
-        return torch.randn(
+        noise = torch.randn(
             batch_size, 4, 64, 64,
             device=device,
             generator=generator
         )
+        # Scale noise by noise_level (100 = full noise, 0 = no noise)
+        if noise_level < 100.0:
+            noise = noise * (noise_level / 100.0)
+        return noise
 
     def prepare_conditioning(
         self,
@@ -515,6 +601,11 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
             "cross_attention_dim": 768,
             "num_train_timesteps": 1000,
             "sd_version": "CompVis/stable-diffusion-v1-4",
+            # Sampling defaults (noise_level 0-100 scale)
+            "noise_max": 100.0,
+            "noise_min": 0.0,
+            "default_steps": 50,
+            "guidance_scale": 7.5,
         }
 
     def to(self, device: str) -> 'AbuCustomSDAdapter':

@@ -80,6 +80,32 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
 
         raise ValueError(f"Unknown layer: {layer_name}")
 
+    # DMD2 native sigma range
+    SIGMA_MAX = 80.0
+    SIGMA_MIN = 0.002
+
+    def noise_level_to_native(
+        self,
+        noise_level: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert noise_level (0-100) to DMD2 sigma.
+
+        Uses log-space interpolation:
+        - noise_level 0 → sigma_min (0.002)
+        - noise_level 100 → sigma_max (80.0)
+
+        Args:
+            noise_level: Noise level as percentage (0-100)
+
+        Returns:
+            sigma: DMD2 sigma value
+        """
+        t = noise_level / 100.0
+        # Log-space interpolation: sigma = sigma_min^(1-t) * sigma_max^t
+        sigma = self.SIGMA_MIN ** (1 - t) * self.SIGMA_MAX ** t
+        return sigma
+
     def forward(
         self,
         x: torch.Tensor,
@@ -103,9 +129,9 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         self,
         num_steps: int,
         device: str = 'cuda',
-        sigma_max: float = 80.0,
-        sigma_min: float = 0.002,
-        **kwargs  # Accept rho etc for API consistency, ignored
+        noise_level_max: float = 100.0,
+        noise_level_min: float = 0.0,
+        **kwargs
     ) -> torch.Tensor:
         """
         Return logarithmic sigma schedule for DMD2.
@@ -115,14 +141,20 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         Args:
             num_steps: Number of denoising steps (typically 1-10)
             device: Target device
-            sigma_max: Maximum noise level (default: 80.0)
-            sigma_min: Minimum noise level (default: 0.002)
+            noise_level_max: Starting noise level (0-100), default 100
+            noise_level_min: Ending noise level (0-100), default 0
             **kwargs: Ignored (for API consistency with other adapters)
 
         Returns:
             Sigma tensor (num_steps + 1,) from sigma_max to 0
             Example for 6 steps: [80, 33, 10, 3, 1, 0.5, 0]
         """
+        # Convert noise_level to sigma
+        sigma_max = float(self.noise_level_to_native(torch.tensor(noise_level_max)))
+        sigma_min = float(self.noise_level_to_native(torch.tensor(noise_level_min)))
+        # Ensure sigma_min is not zero for log schedule
+        sigma_min = max(sigma_min, self.SIGMA_MIN)
+
         # Log-linear interpolation in log space, then append 0
         sigmas = torch.logspace(
             torch.log10(torch.tensor(sigma_max)),
@@ -166,7 +198,7 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         batch_size: int,
         device: str = 'cuda',
         generator: Optional[torch.Generator] = None,
-        sigma_max: float = 80.0
+        noise_level: float = 100.0
     ) -> torch.Tensor:
         """
         Generate initial noise for DMD2 sampling.
@@ -175,17 +207,18 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             batch_size: Number of samples
             device: Target device
             generator: Optional RNG for reproducibility
-            sigma_max: Maximum noise level (default: 80.0)
+            noise_level: Starting noise level (0-100), default 100
 
         Returns:
-            Noise tensor (B, 3, 64, 64) scaled by sigma_max
+            Noise tensor (B, 3, 64, 64) scaled by corresponding sigma
         """
+        sigma = float(self.noise_level_to_native(torch.tensor(noise_level)))
         noise = torch.randn(
             batch_size, 3, self.resolution, self.resolution,
             device=device,
             generator=generator
         )
-        return noise * sigma_max
+        return noise * sigma
 
     def prepare_conditioning(
         self,
@@ -359,9 +392,9 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             "use_fp16": False,
             "sigma_data": 0.5,
             "model_type": "DhariwalUNet",
-            # Sampling defaults (DMD2 is distilled for few-step generation)
-            "sigma_max": 80.0,
-            "sigma_min": 0.5,
+            # Sampling defaults (noise_level 0-100 scale, DMD2 distilled for few-step)
+            "noise_max": 100.0,
+            "noise_min": 5.0,  # DMD2 works best with slight residual noise
             "default_steps": 5,
         }
 
