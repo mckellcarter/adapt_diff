@@ -132,6 +132,9 @@ adapter.uses_latent          # True for latent-space models (SD), False for pixe
 adapter.in_channels          # 3 (RGB) or 4 (SD latent)
 adapter.conditioning_type    # 'text', 'class', or 'unconditional'
 adapter.latent_scale_factor  # 8 for SD (512→64), 1 for pixel models
+
+# Convert model prediction to x₀ (for intermediate visualization)
+x0 = adapter.convert_latent_sample(x_t, t, pred)  # epsilon→x₀ or identity for sample models
 ```
 
 ## Creating a Custom Adapter
@@ -222,6 +225,14 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
             labels = torch.randint(0, self.num_classes, (batch_size,), device=device)
         return torch.eye(self.num_classes, device=device)[labels]
         # For text-conditional: encode text with CLIP and return embeddings dict
+
+    def convert_latent_sample(self, x_t, t, model_output):
+        """Convert model prediction to x₀ for intermediate visualization."""
+        # For sample prediction (EDM/DMD2): return as-is
+        return model_output
+        # For epsilon prediction (DDPM): compute x₀ from noise
+        # alpha_t = self._scheduler.alphas_cumprod[int(t)]
+        # return (x_t - (1-alpha_t).sqrt() * model_output) / alpha_t.sqrt()
 
     # Optional: Override for latent-space models
     def encode(self, images):
