@@ -99,6 +99,32 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
 
         raise ValueError(f"Unknown layer: {layer_name}")
 
+    # EDM native sigma range
+    SIGMA_MAX = 80.0
+    SIGMA_MIN = 0.002
+
+    def noise_level_to_native(
+        self,
+        noise_level: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert noise_level (0-100) to EDM sigma.
+
+        Uses log-space interpolation:
+        - noise_level 0 → sigma_min (0.002)
+        - noise_level 100 → sigma_max (80.0)
+
+        Args:
+            noise_level: Noise level as percentage (0-100)
+
+        Returns:
+            sigma: EDM sigma value
+        """
+        t = noise_level / 100.0
+        # Log-space interpolation: sigma = sigma_min^(1-t) * sigma_max^t
+        sigma = self.SIGMA_MIN ** (1 - t) * self.SIGMA_MAX ** t
+        return sigma
+
     def forward(
         self,
         x: torch.Tensor,
@@ -114,7 +140,7 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
 
         Args:
             x: Noisy input (B, C, H, W) - should be scaled by sigma
-            sigma: Noise levels (B,) or scalar
+            sigma: Native sigma value (use noise_level_to_native() to convert from 0-100)
             class_labels: One-hot class labels (B, 1000) or None
         """
         if class_labels is None:
@@ -125,10 +151,10 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         self,
         num_steps: int,
         device: str = 'cuda',
-        sigma_max: float = 80.0,
-        sigma_min: float = 0.002,
+        noise_level_max: float = 100.0,
+        noise_level_min: float = 0.0,
         rho: float = 7.0,
-        **kwargs  # For API extensibility
+        **kwargs
     ) -> torch.Tensor:
         """
         Return Karras sigma schedule for EDM.
@@ -136,14 +162,20 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         Args:
             num_steps: Number of denoising steps
             device: Target device
-            sigma_max: Maximum noise level (default: 80.0)
-            sigma_min: Minimum noise level (default: 0.002)
+            noise_level_max: Starting noise level (0-100), default 100
+            noise_level_min: Ending noise level (0-100), default 0
             rho: Schedule curvature parameter (default: 7.0)
             **kwargs: Ignored (for API extensibility)
 
         Returns:
             Sigma tensor (num_steps + 1,) from sigma_max to 0
         """
+        # Convert noise_level to sigma
+        sigma_max = float(self.noise_level_to_native(torch.tensor(noise_level_max)))
+        sigma_min = float(self.noise_level_to_native(torch.tensor(noise_level_min)))
+        # Ensure sigma_min is not zero for Karras schedule
+        sigma_min = max(sigma_min, self.SIGMA_MIN)
+
         # MPS doesn't support float64, use float32 instead
         high_prec_dtype = torch.float64 if device != 'mps' else torch.float32
 
@@ -192,7 +224,7 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         batch_size: int,
         device: str = 'cuda',
         generator: Optional[torch.Generator] = None,
-        sigma_max: float = 80.0
+        noise_level: float = 100.0
     ) -> torch.Tensor:
         """
         Generate initial noise for EDM sampling.
@@ -201,17 +233,18 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
             batch_size: Number of samples
             device: Target device
             generator: Optional RNG for reproducibility
-            sigma_max: Maximum noise level (default: 80.0)
+            noise_level: Starting noise level (0-100), default 100
 
         Returns:
-            Noise tensor (B, 3, 64, 64) scaled by sigma_max
+            Noise tensor (B, 3, 64, 64) scaled by corresponding sigma
         """
+        sigma = float(self.noise_level_to_native(torch.tensor(noise_level)))
         noise = torch.randn(
             batch_size, 3, self.resolution, self.resolution,
             device=device,
             generator=generator
         )
-        return noise * sigma_max
+        return noise * sigma
 
     def prepare_conditioning(
         self,
@@ -477,9 +510,9 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
             "use_fp16": False,
             "sigma_data": 0.5,
             "model_type": "DhariwalUNet",
-            # Sampling defaults
-            "sigma_max": 80.0,
-            "sigma_min": 0.002,
+            # Sampling defaults (noise_level 0-100 scale)
+            "noise_max": 100.0,
+            "noise_min": 0.0,
             "default_steps": 50,
             "rho": 7.0,
         }

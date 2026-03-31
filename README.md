@@ -83,18 +83,25 @@ for h in handles:
 
 ## Diffusion Sampling Interface
 
-Adapters now expose a unified interface for diffusion sampling:
+Adapters expose a unified interface for diffusion sampling. Noise levels use a universal 0-100 scale (100=pure noise, 0=clean) that each adapter translates to its native format.
 
 ```python
 # Get sampling defaults from adapter
 config = adapter.get_default_config()
 num_steps = config.get('default_steps', 50)
+noise_max = config.get('noise_max', 100.0)  # Starting noise level (0-100)
+noise_min = config.get('noise_min', 0.0)    # Ending noise level (0-100)
 
-# Generate noise schedule
-timesteps = adapter.get_timesteps(num_steps=num_steps, device='cuda')
+# Generate noise schedule (returns native format: sigmas or timesteps)
+timesteps = adapter.get_timesteps(
+    num_steps=num_steps,
+    device='cuda',
+    noise_level_max=noise_max,
+    noise_level_min=noise_min
+)
 
-# Initialize noise
-x = adapter.get_initial_noise(batch_size=4, device='cuda')
+# Initialize noise (scaled for starting noise level)
+x = adapter.get_initial_noise(batch_size=4, device='cuda', noise_level=noise_max)
 
 # Prepare conditioning
 cond = adapter.prepare_conditioning(text="a cat", batch_size=4)       # text models
@@ -105,6 +112,9 @@ for i, t in enumerate(timesteps[:-1]):
     # CFG works for both text and class-conditional models
     pred = adapter.forward_with_cfg(x, t, cond, guidance_scale=7.5)
 
+    # Optional: get x0 estimate for visualization (handles epsilon/sample/v_prediction)
+    # x0_estimate = adapter.pred_to_sample(x, t, pred)
+
     # Single denoising step
     x = adapter.step(x, t, pred, t_next=timesteps[i+1])
 
@@ -114,13 +124,14 @@ images = adapter.decode(x)
 
 ### Sampling Defaults
 
-Each adapter provides sensible defaults via `get_default_config()`:
+Each adapter provides sensible defaults via `get_default_config()`. Noise levels use a universal 0-100 scale where 100=pure noise, 0=clean. Each adapter translates internally to native format (sigma for EDM/DMD2, timesteps for DDPM).
 
-| Adapter | `default_steps` | `sigma_max` | `sigma_min` | Notes |
+| Adapter | `default_steps` | `noise_max` | `noise_min` | Notes |
 |---------|----------------|-------------|-------------|-------|
-| EDM | 50 | 80.0 | 0.002 | Karras schedule, `rho=7.0` |
-| DMD2 | 5 | 80.0 | 0.5 | Distilled for few-step |
-| MSCOCO T2I | 20 | — | — | DDPM timesteps, `guidance_scale=7.5` |
+| EDM | 50 | 100.0 | 0.0 | Karras schedule, `rho=7.0` |
+| DMD2 | 5 | 100.0 | 5.0 | Distilled for few-step |
+| MSCOCO T2I | 20 | 100.0 | 0.0 | DDPM timesteps, `guidance_scale=7.5` |
+| AbU Custom SD | 50 | 100.0 | 0.0 | SD v1.4 latent space, `guidance_scale=7.5` |
 
 ### Adapter Properties
 
@@ -189,14 +200,36 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
     def get_layer_shapes(self):
         return {'encoder': (512, 16, 16), 'decoder': (256, 32, 32), 'mid': (512, 8, 8)}
 
+    # ============ Noise Level Translation ============
+    def noise_level_to_native(self, noise_level):
+        """Convert universal noise_level (0-100) to model's native format.
+
+        Args:
+            noise_level: 0-100 scale (0=clean, 100=pure noise)
+        Returns:
+            Native format (sigma for EDM/DMD2, timestep for DDPM)
+        """
+        # For sigma models (EDM/DMD2): log-space interpolation
+        t = noise_level / 100.0
+        return self.SIGMA_MIN ** (1 - t) * self.SIGMA_MAX ** t
+        # For timestep models (DDPM): linear mapping
+        # return (noise_level / 100.0 * 999).long()
+
     # ============ Diffusion Methods ============
-    def get_timesteps(self, num_steps, device='cuda'):
-        """Return noise schedule (timesteps or sigmas)."""
+    def get_timesteps(self, num_steps, device='cuda', noise_level_max=100.0, noise_level_min=0.0, **kwargs):
+        """Return noise schedule in native format.
+
+        Args:
+            num_steps: Number of denoising steps
+            noise_level_max: Starting noise (0-100), default 100
+            noise_level_min: Ending noise (0-100), default 0
+        Returns:
+            Schedule tensor in native format (sigma or timesteps)
+        """
         # For timestep models (DDPM):
         self._scheduler.set_timesteps(num_steps, device=device)
         return self._scheduler.timesteps
-        # For sigma models (EDM):
-        # return torch.linspace(sigma_max, sigma_min, num_steps+1, device=device)
+        # For sigma models (EDM): use noise_level_to_native for conversion
 
     def step(self, x_t, t, model_output, **kwargs):
         """Single denoising step: x_t → x_{t-1}."""
@@ -206,11 +239,29 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
         # d = (x_t - model_output) / t
         # return x_t + (kwargs['t_next'] - t) * d
 
-    def get_initial_noise(self, batch_size, device='cuda', generator=None):
-        """Generate initial noise with correct shape."""
-        return torch.randn(batch_size, self.in_channels,
-                          self.resolution, self.resolution,
-                          device=device, generator=generator)
+    def get_initial_noise(self, batch_size, device='cuda', generator=None, noise_level=100.0):
+        """Generate initial noise with correct shape and scaling.
+
+        Args:
+            noise_level: Starting noise (0-100), default 100 (pure noise)
+        """
+        noise = torch.randn(batch_size, self.in_channels,
+                           self.resolution, self.resolution,
+                           device=device, generator=generator)
+        # Scale by native sigma if needed (EDM/DMD2)
+        # sigma = self.noise_level_to_native(torch.tensor(noise_level))
+        # return noise * sigma
+        return noise
+
+    def pred_to_sample(self, x_t, t, model_output):
+        """Convert model output to estimated clean sample (x0).
+
+        Override for epsilon-prediction models:
+            alpha_t = scheduler.alphas_cumprod[t]
+            x0 = (x_t - sqrt(1-alpha_t) * model_output) / sqrt(alpha_t)
+        Default returns model_output unchanged (for sample-prediction).
+        """
+        return model_output
 
     def prepare_conditioning(self, text=None, class_label=None,
                            batch_size=1, device='cuda', **kwargs):
