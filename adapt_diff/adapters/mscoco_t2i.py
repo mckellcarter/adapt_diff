@@ -501,8 +501,9 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         model = model.to(device)
         model.eval()
 
-        # Scheduler
-        scheduler = DDPMScheduler(num_train_timesteps=1000)
+        # Scheduler - disable clip_sample for latent-space models
+        # (pred_original_sample needs full latent range, not [-1,1])
+        scheduler = DDPMScheduler(num_train_timesteps=1000, clip_sample=False)
 
         # Optional VAE for latent decoding
         vae = None
