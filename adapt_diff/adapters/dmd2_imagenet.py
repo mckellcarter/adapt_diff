@@ -139,9 +139,8 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         t: torch.Tensor,
         model_output: torch.Tensor,
         t_next: Optional[torch.Tensor] = None,
-        return_x0: bool = False,
         **kwargs
-    ):
+    ) -> torch.Tensor:
         """
         Euler step for DMD2 sampling.
 
@@ -150,24 +149,17 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             t: Current sigma value (scalar or (B,))
             model_output: Denoised output from forward() (B, C, H, W)
             t_next: Next sigma value (required)
-            return_x0: If True, return (x_{t-1}, pred_x0) tuple
             **kwargs: Unused
 
         Returns:
             x_{t-1}: Next (less noisy) sample
-            Or if return_x0=True: Tuple of (x_{t-1}, pred_x0)
         """
         if t_next is None:
             raise ValueError("DMD2 step() requires t_next parameter")
 
         # Euler step: x_next = x + (t_next - t) * dx/dt
         d_cur = (x_t - model_output) / t
-        x_next = x_t + (t_next - t) * d_cur
-
-        if return_x0:
-            # DMD2 predicts x0 directly (model_output is denoised sample)
-            return x_next, model_output
-        return x_next
+        return x_t + (t_next - t) * d_cur
 
     def get_initial_noise(
         self,

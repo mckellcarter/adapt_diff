@@ -205,14 +205,10 @@ class GeneratorAdapter(ABC):
             x_t: Current noisy sample (B, C, H, W)
             t: Current timestep/sigma (B,) or scalar
             model_output: Raw model output (B, C, H, W)
-            **kwargs: Scheduler-specific options:
-                - t_next: Next timestep/sigma (required for sigma-based models)
-                - return_x0: If True, return (x_{t-1}, pred_x0) tuple
-                - eta, generator: Other scheduler options
+            **kwargs: Scheduler-specific options (e.g., eta, generator, t_next)
 
         Returns:
             x_{t-1}: Less noisy sample (B, C, H, W)
-            Or if return_x0=True: Tuple of (x_{t-1}, pred_x0)
 
         Note: This wraps scheduler.step() for timestep models or implements
         EDM-style stepping for sigma models.

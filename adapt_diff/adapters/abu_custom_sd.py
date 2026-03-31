@@ -155,9 +155,8 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         x_t: torch.Tensor,
         t: torch.Tensor,
         model_output: torch.Tensor,
-        return_x0: bool = False,
         **kwargs
-    ):
+    ) -> torch.Tensor:
         """
         DDPM denoising step via scheduler.
 
@@ -165,17 +164,12 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
             x_t: Current noisy latent (B, 4, 64, 64)
             t: Current timestep (scalar or (B,))
             model_output: Predicted noise from forward() (B, 4, 64, 64)
-            return_x0: If True, return (x_{t-1}, pred_x0) tuple
             **kwargs: Passed to scheduler.step() (e.g., generator, eta)
 
         Returns:
             x_{t-1}: Less noisy latent
-            Or if return_x0=True: Tuple of (x_{t-1}, pred_x0)
         """
-        output = self._scheduler.step(model_output, t, x_t, **kwargs)
-        if return_x0:
-            return output.prev_sample, output.pred_original_sample
-        return output.prev_sample
+        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
 
     def get_initial_noise(
         self,

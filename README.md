@@ -132,9 +132,6 @@ adapter.uses_latent          # True for latent-space models (SD), False for pixe
 adapter.in_channels          # 3 (RGB) or 4 (SD latent)
 adapter.conditioning_type    # 'text', 'class', or 'unconditional'
 adapter.latent_scale_factor  # 8 for SD (512→64), 1 for pixel models
-
-# Get pred_x0 during step (for intermediate visualization)
-x_next, pred_x0 = adapter.step(x, t, pred, t_next=t_next, return_x0=True)
 ```
 
 ## Creating a Custom Adapter
@@ -201,14 +198,13 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
         # For sigma models (EDM):
         # return torch.linspace(sigma_max, sigma_min, num_steps+1, device=device)
 
-    def step(self, x_t, t, model_output, return_x0=False, **kwargs):
-        """Single denoising step: x_t → x_{t-1}. Pass return_x0=True to get pred_x0."""
+    def step(self, x_t, t, model_output, **kwargs):
+        """Single denoising step: x_t → x_{t-1}."""
         # For timestep models:
-        output = self._scheduler.step(model_output, t, x_t, **kwargs)
-        if return_x0:
-            return output.prev_sample, output.pred_original_sample
-        return output.prev_sample
-        # For sigma models: return (x_next, model_output) when return_x0=True
+        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
+        # For sigma models with t_next in kwargs:
+        # d = (x_t - model_output) / t
+        # return x_t + (kwargs['t_next'] - t) * d
 
     def get_initial_noise(self, batch_size, device='cuda', generator=None):
         """Generate initial noise with correct shape."""
