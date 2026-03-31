@@ -148,8 +148,9 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         t: torch.Tensor,
         model_output: torch.Tensor,
         t_next: Optional[torch.Tensor] = None,
+        return_x0: bool = False,
         **kwargs
-    ) -> torch.Tensor:
+    ):
         """
         DDPM denoising step via scheduler.
 
@@ -158,42 +159,18 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             t: Current timestep (scalar or (B,))
             model_output: Predicted noise from forward() (B, 4, 16, 16)
             t_next: Unused (accepted for API consistency with sigma-based models)
+            return_x0: If True, return (x_{t-1}, pred_x0) tuple
             **kwargs: Passed to scheduler.step() (e.g., generator, eta)
 
         Returns:
             x_{t-1}: Less noisy latent
+            Or if return_x0=True: Tuple of (x_{t-1}, pred_x0)
         """
         # t_next is ignored - scheduler handles timestep progression internally
-        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
-
-    def convert_latent_sample(
-        self,
-        x_t: torch.Tensor,
-        t: torch.Tensor,
-        model_output: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Convert epsilon prediction to x₀ for intermediate visualization.
-
-        DDPM formula: x₀ = (x_t - sqrt(1-α_t) * ε) / sqrt(α_t)
-
-        Args:
-            x_t: Current noisy latent (B, 4, 16, 16)
-            t: Current timestep (scalar or (B,))
-            model_output: Predicted noise ε (B, 4, 16, 16)
-
-        Returns:
-            Predicted clean latent x₀ (B, 4, 16, 16)
-        """
-        # Get alpha_cumprod for this timestep
-        t_idx = int(t) if t.dim() == 0 else int(t[0])
-        alpha_prod_t = self._scheduler.alphas_cumprod[t_idx].to(x_t.device)
-
-        # x₀ = (x_t - sqrt(1-α_t) * ε) / sqrt(α_t)
-        sqrt_alpha_t = alpha_prod_t.sqrt()
-        sqrt_one_minus_alpha_t = (1 - alpha_prod_t).sqrt()
-
-        return (x_t - sqrt_one_minus_alpha_t * model_output) / sqrt_alpha_t
+        output = self._scheduler.step(model_output, t, x_t, **kwargs)
+        if return_x0:
+            return output.prev_sample, output.pred_original_sample
+        return output.prev_sample
 
     def get_initial_noise(
         self,

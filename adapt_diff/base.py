@@ -205,10 +205,14 @@ class GeneratorAdapter(ABC):
             x_t: Current noisy sample (B, C, H, W)
             t: Current timestep/sigma (B,) or scalar
             model_output: Raw model output (B, C, H, W)
-            **kwargs: Scheduler-specific options (e.g., eta, generator, t_next)
+            **kwargs: Scheduler-specific options:
+                - t_next: Next timestep/sigma (required for sigma-based models)
+                - return_x0: If True, return (x_{t-1}, pred_x0) tuple
+                - eta, generator: Other scheduler options
 
         Returns:
             x_{t-1}: Less noisy sample (B, C, H, W)
+            Or if return_x0=True: Tuple of (x_{t-1}, pred_x0)
 
         Note: This wraps scheduler.step() for timestep models or implements
         EDM-style stepping for sigma models.
@@ -293,32 +297,6 @@ class GeneratorAdapter(ABC):
             Images (B, 3, H, W), range [-1, 1]
         """
         return representation
-
-    @abstractmethod
-    def convert_latent_sample(
-        self,
-        x_t: torch.Tensor,
-        t: torch.Tensor,
-        model_output: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Convert model prediction to x₀ (predicted clean sample).
-
-        For visualization of intermediate denoising steps. Different models
-        predict different targets:
-        - sample (x0): Returns model_output directly
-        - epsilon (noise): Computes x₀ from noise prediction
-        - v_prediction: Computes x₀ from velocity
-
-        Args:
-            x_t: Current noisy sample (B, C, H, W)
-            t: Current timestep/sigma
-            model_output: Raw model prediction (B, C, H, W)
-
-        Returns:
-            Predicted clean sample x₀ (B, C, H, W)
-        """
-        pass
 
     def forward_with_cfg(
         self,

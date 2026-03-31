@@ -133,8 +133,8 @@ adapter.in_channels          # 3 (RGB) or 4 (SD latent)
 adapter.conditioning_type    # 'text', 'class', or 'unconditional'
 adapter.latent_scale_factor  # 8 for SD (512→64), 1 for pixel models
 
-# Convert model prediction to x₀ (for intermediate visualization)
-x0 = adapter.convert_latent_sample(x_t, t, pred)  # epsilon→x₀ or identity for sample models
+# Get pred_x0 during step (for intermediate visualization)
+x_next, pred_x0 = adapter.step(x, t, pred, t_next=t_next, return_x0=True)
 ```
 
 ## Creating a Custom Adapter
@@ -201,13 +201,14 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
         # For sigma models (EDM):
         # return torch.linspace(sigma_max, sigma_min, num_steps+1, device=device)
 
-    def step(self, x_t, t, model_output, **kwargs):
-        """Single denoising step: x_t → x_{t-1}."""
+    def step(self, x_t, t, model_output, return_x0=False, **kwargs):
+        """Single denoising step: x_t → x_{t-1}. Pass return_x0=True to get pred_x0."""
         # For timestep models:
-        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
-        # For sigma models with t_next in kwargs:
-        # d = (x_t - model_output) / t
-        # return x_t + (kwargs['t_next'] - t) * d
+        output = self._scheduler.step(model_output, t, x_t, **kwargs)
+        if return_x0:
+            return output.prev_sample, output.pred_original_sample
+        return output.prev_sample
+        # For sigma models: return (x_next, model_output) when return_x0=True
 
     def get_initial_noise(self, batch_size, device='cuda', generator=None):
         """Generate initial noise with correct shape."""
@@ -225,14 +226,6 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
             labels = torch.randint(0, self.num_classes, (batch_size,), device=device)
         return torch.eye(self.num_classes, device=device)[labels]
         # For text-conditional: encode text with CLIP and return embeddings dict
-
-    def convert_latent_sample(self, x_t, t, model_output):
-        """Convert model prediction to x₀ for intermediate visualization."""
-        # For sample prediction (EDM/DMD2): return as-is
-        return model_output
-        # For epsilon prediction (DDPM): compute x₀ from noise
-        # alpha_t = self._scheduler.alphas_cumprod[int(t)]
-        # return (x_t - (1-alpha_t).sqrt() * model_output) / alpha_t.sqrt()
 
     # Optional: Override for latent-space models
     def encode(self, images):
