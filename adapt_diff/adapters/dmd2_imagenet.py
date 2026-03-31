@@ -247,6 +247,11 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         return torch.eye(self.num_classes, device=device)[labels]
 
     @property
+    def timestep_label(self) -> str:
+        """Label for native timestep values in UI (σ for sigma-based models)."""
+        return "σ"
+
+    @property
     def prediction_type(self) -> str:
         """DMD2 predicts denoised sample x0."""
         return 'sample'
@@ -394,7 +399,7 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             "model_type": "DhariwalUNet",
             # Sampling defaults (noise_level 0-100 scale, DMD2 distilled for few-step)
             "noise_max": 100.0,
-            "noise_min": 5.0,  # DMD2 works best with slight residual noise
+            "noise_min": 0.5,
             "default_steps": 5,
         }
 

@@ -273,6 +273,11 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         return torch.eye(self.num_classes, device=device)[labels]
 
     @property
+    def timestep_label(self) -> str:
+        """Label for native timestep values in UI (σ for sigma-based models)."""
+        return "σ"
+
+    @property
     def prediction_type(self) -> str:
         """EDM predicts denoised sample x0."""
         return 'sample'
@@ -512,7 +517,7 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
             "model_type": "DhariwalUNet",
             # Sampling defaults (noise_level 0-100 scale)
             "noise_max": 100.0,
-            "noise_min": 0.0,
+            "noise_min": 0.5,
             "default_steps": 50,
             "rho": 7.0,
         }

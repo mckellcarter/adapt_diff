@@ -394,6 +394,11 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         return self.decode_latents(representation)
 
     @property
+    def timestep_label(self) -> str:
+        """Label for native timestep values in UI (t for DDPM timesteps)."""
+        return "t"
+
+    @property
     def prediction_type(self) -> str:
         """Custom Diffusion predicts noise (epsilon)."""
         return 'epsilon'
@@ -603,7 +608,7 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
             "sd_version": "CompVis/stable-diffusion-v1-4",
             # Sampling defaults (noise_level 0-100 scale)
             "noise_max": 100.0,
-            "noise_min": 0.0,
+            "noise_min": 0.5,
             "default_steps": 50,
             "guidance_scale": 7.5,
         }

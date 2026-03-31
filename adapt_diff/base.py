@@ -65,6 +65,16 @@ class GeneratorAdapter(ABC):
         pass
 
     @property
+    def timestep_label(self) -> str:
+        """
+        Label for native timestep values in UI display.
+
+        Returns:
+            Display label for timestep metric (e.g., "σ" for sigma, "t" for timestep)
+        """
+        return "σ"  # Default for sigma-based models
+
+    @property
     @abstractmethod
     def prediction_type(self) -> str:
         """
