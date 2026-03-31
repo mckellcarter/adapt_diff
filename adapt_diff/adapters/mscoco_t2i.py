@@ -148,9 +148,8 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         t: torch.Tensor,
         model_output: torch.Tensor,
         t_next: Optional[torch.Tensor] = None,
-        return_x0: bool = False,
         **kwargs
-    ):
+    ) -> torch.Tensor:
         """
         DDPM denoising step via scheduler.
 
@@ -159,18 +158,13 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             t: Current timestep (scalar or (B,))
             model_output: Predicted noise from forward() (B, 4, 16, 16)
             t_next: Unused (accepted for API consistency with sigma-based models)
-            return_x0: If True, return (x_{t-1}, pred_x0) tuple
             **kwargs: Passed to scheduler.step() (e.g., generator, eta)
 
         Returns:
             x_{t-1}: Less noisy latent
-            Or if return_x0=True: Tuple of (x_{t-1}, pred_x0)
         """
         # t_next is ignored - scheduler handles timestep progression internally
-        output = self._scheduler.step(model_output, t, x_t, **kwargs)
-        if return_x0:
-            return output.prev_sample, output.pred_original_sample
-        return output.prev_sample
+        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
 
     def get_initial_noise(
         self,
