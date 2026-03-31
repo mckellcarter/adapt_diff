@@ -155,8 +155,9 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         x_t: torch.Tensor,
         t: torch.Tensor,
         model_output: torch.Tensor,
+        return_x0: bool = False,
         **kwargs
-    ) -> torch.Tensor:
+    ):
         """
         DDPM denoising step via scheduler.
 
@@ -164,12 +165,17 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
             x_t: Current noisy latent (B, 4, 64, 64)
             t: Current timestep (scalar or (B,))
             model_output: Predicted noise from forward() (B, 4, 64, 64)
+            return_x0: If True, return (x_{t-1}, pred_x0) tuple
             **kwargs: Passed to scheduler.step() (e.g., generator, eta)
 
         Returns:
             x_{t-1}: Less noisy latent
+            Or if return_x0=True: Tuple of (x_{t-1}, pred_x0)
         """
-        return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
+        output = self._scheduler.step(model_output, t, x_t, **kwargs)
+        if return_x0:
+            return output.prev_sample, output.pred_original_sample
+        return output.prev_sample
 
     def get_initial_noise(
         self,
@@ -311,25 +317,6 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
     def prediction_type(self) -> str:
         """Custom Diffusion predicts noise (epsilon)."""
         return 'epsilon'
-
-    def convert_latent_sample(
-        self,
-        x_t: torch.Tensor,
-        t: torch.Tensor,
-        model_output: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        Convert epsilon prediction to x₀ for intermediate visualization.
-
-        DDPM formula: x₀ = (x_t - sqrt(1-α_t) * ε) / sqrt(α_t)
-        """
-        t_idx = int(t) if t.dim() == 0 else int(t[0])
-        alpha_prod_t = self._scheduler.alphas_cumprod[t_idx].to(x_t.device)
-
-        sqrt_alpha_t = alpha_prod_t.sqrt()
-        sqrt_one_minus_alpha_t = (1 - alpha_prod_t).sqrt()
-
-        return (x_t - sqrt_one_minus_alpha_t * model_output) / sqrt_alpha_t
 
     @property
     def uses_latent(self) -> bool:
