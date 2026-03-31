@@ -218,6 +218,15 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         """DMD2 predicts denoised sample x0."""
         return 'sample'
 
+    def convert_latent_sample(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor
+    ) -> torch.Tensor:
+        """DMD2 predicts x0 directly, no conversion needed."""
+        return model_output
+
     @property
     def uses_latent(self) -> bool:
         """DMD2 operates in pixel space."""

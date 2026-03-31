@@ -294,6 +294,32 @@ class GeneratorAdapter(ABC):
         """
         return representation
 
+    @abstractmethod
+    def convert_latent_sample(
+        self,
+        x_t: torch.Tensor,
+        t: torch.Tensor,
+        model_output: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert model prediction to x₀ (predicted clean sample).
+
+        For visualization of intermediate denoising steps. Different models
+        predict different targets:
+        - sample (x0): Returns model_output directly
+        - epsilon (noise): Computes x₀ from noise prediction
+        - v_prediction: Computes x₀ from velocity
+
+        Args:
+            x_t: Current noisy sample (B, C, H, W)
+            t: Current timestep/sigma
+            model_output: Raw model prediction (B, C, H, W)
+
+        Returns:
+            Predicted clean sample x₀ (B, C, H, W)
+        """
+        pass
+
     def forward_with_cfg(
         self,
         x: torch.Tensor,
