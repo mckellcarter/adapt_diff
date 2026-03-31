@@ -392,6 +392,11 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         return self.decode_latents(representation)
 
     @property
+    def timestep_label(self) -> str:
+        """Label for native timestep values in UI (t for DDPM timesteps)."""
+        return "t"
+
+    @property
     def prediction_type(self) -> str:
         """MSCOCO T2I predicts noise (epsilon)."""
         return 'epsilon'
