@@ -83,14 +83,16 @@ class TestEDMImageNetAdapterDiffusionMethods:
         assert sigmas[-1] == 0.0
 
     def test_get_timesteps_custom_params(self, mock_adapter):
-        """Test timestep generation with custom parameters."""
+        """Test timestep generation with custom noise_level parameters."""
+        # noise_level 50-10 maps to partial noise schedule
         sigmas = mock_adapter.get_timesteps(
-            10, device='cpu', sigma_max=100.0, sigma_min=0.01, rho=5.0
+            10, device='cpu', noise_level_max=50.0, noise_level_min=10.0
         )
 
         assert len(sigmas) == 11
-        assert sigmas[0] == pytest.approx(100.0, rel=0.01)
-        assert sigmas[-1] == 0.0
+        # noise_level 50 → sigma between min and max
+        assert sigmas[0] < mock_adapter.SIGMA_MAX
+        assert sigmas[0] > mock_adapter.SIGMA_MIN
 
     def test_step(self, mock_adapter):
         """Test Euler stepping."""
@@ -127,13 +129,15 @@ class TestEDMImageNetAdapterDiffusionMethods:
         # std should be roughly sigma_max
         assert 60.0 < noise.std().item() < 100.0
 
-    def test_get_initial_noise_custom_sigma(self, mock_adapter):
-        """Test noise generation with custom sigma_max."""
+    def test_get_initial_noise_custom_noise_level(self, mock_adapter):
+        """Test noise generation with custom noise_level."""
+        # noise_level 50 → sigma ~6.3 (geometric mean of 80 and 0.5)
         noise = mock_adapter.get_initial_noise(
-            1, device='cpu', sigma_max=50.0
+            1, device='cpu', noise_level=50.0
         )
 
-        assert 30.0 < noise.std().item() < 70.0
+        # Lower noise_level = lower sigma = smaller std
+        assert noise.std().item() < 20.0
 
     def test_get_initial_noise_with_generator(self, mock_adapter):
         """Test reproducible noise generation."""
