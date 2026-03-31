@@ -172,8 +172,9 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             x0: Estimated clean latent (B, 4, 16, 16)
         """
         # Get alpha_cumprod for this timestep
+        # Note: scheduler tensors are on CPU, so index must be on CPU
         t_int = t.long() if t.dim() > 0 else t.long().unsqueeze(0)
-        alpha_prod_t = self._scheduler.alphas_cumprod[t_int].to(x_t.device)
+        alpha_prod_t = self._scheduler.alphas_cumprod[t_int.cpu()].to(x_t.device)
 
         # Reshape for broadcasting: (B,) -> (B, 1, 1, 1)
         while alpha_prod_t.dim() < x_t.dim():
