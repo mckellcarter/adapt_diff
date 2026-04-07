@@ -268,6 +268,10 @@ def generate(
     x = adapter.decode(x)
     images = tensor_to_uint8_image(x)
 
+    # Append final image to intermediates
+    if return_intermediates:
+        intermediate_images.append(images)
+
     return GenerationResult(
         images=images,
         labels=labels.cpu(),
