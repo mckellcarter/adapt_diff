@@ -190,9 +190,8 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         max_inv_rho = sigma_max ** (1 / rho)
         sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
 
-        # Round to model's internal sigma table for numerical stability
-        # (same as EDM - both use EDMPrecond which has round_sigma)
-        return torch.cat([self._model.round_sigma(sigmas), torch.zeros(1, device=device)])
+        # Return raw Karras schedule (no rounding) to match diffviews index training
+        return torch.cat([sigmas, torch.zeros(1, device=device)])
 
     def step(
         self,
