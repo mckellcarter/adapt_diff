@@ -175,24 +175,31 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         **kwargs
     ) -> torch.Tensor:
         """
-        Euler step for DMD2 sampling.
+        Ancestral sampling step for DMD2.
+
+        DMD2 predicts x0 directly, so we use ancestral sampling:
+        x_next = x0_pred + sigma_next * noise
+
+        This matches the working diffviews generator and avoids
+        numerical instability from Euler's division by small sigma.
 
         Args:
             x_t: Current noisy sample (B, C, H, W)
             t: Current sigma value (scalar or (B,))
-            model_output: Denoised output from forward() (B, C, H, W)
-            t_next: Next sigma value (required)
+            model_output: Denoised x0 prediction from forward() (B, C, H, W)
+            t_next: Next sigma value (0 for final step)
             **kwargs: Unused
 
         Returns:
             x_{t-1}: Next (less noisy) sample
         """
-        if t_next is None:
-            raise ValueError("DMD2 step() requires t_next parameter")
+        # Final step or no next sigma: return prediction directly
+        if t_next is None or float(t_next) == 0:
+            return model_output
 
-        # Euler step: x_next = x + (t_next - t) * dx/dt
-        d_cur = (x_t - model_output) / t
-        return x_t + (t_next - t) * d_cur
+        # Ancestral sampling: x0_pred + sigma_next * noise
+        noise = torch.randn_like(model_output)
+        return model_output + t_next * noise
 
     def get_initial_noise(
         self,
