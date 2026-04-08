@@ -106,6 +106,33 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         sigma = self.SIGMA_MIN ** (1 - t) * self.SIGMA_MAX ** t
         return sigma
 
+    def native_to_noise_level(
+        self,
+        sigma: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert DMD2 sigma to noise_level (0-100).
+
+        Inverse of noise_level_to_native:
+        - sigma_min (0.002) → noise_level 0
+        - sigma_max (80.0) → noise_level 100
+
+        Args:
+            sigma: DMD2 sigma value
+
+        Returns:
+            noise_level: Noise level as percentage (0-100)
+        """
+        import math
+        # Inverse of: sigma = sigma_min^(1-t) * sigma_max^t
+        # log(sigma) = (1-t)*log(sigma_min) + t*log(sigma_max)
+        # t = (log(sigma) - log(sigma_min)) / (log(sigma_max) - log(sigma_min))
+        log_sigma = torch.log(sigma)
+        log_min = math.log(self.SIGMA_MIN)
+        log_max = math.log(self.SIGMA_MAX)
+        t = (log_sigma - log_min) / (log_max - log_min)
+        return t * 100.0
+
     def forward(
         self,
         x: torch.Tensor,
