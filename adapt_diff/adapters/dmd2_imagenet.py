@@ -131,37 +131,38 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         device: str = 'cuda',
         noise_level_max: float = 100.0,
         noise_level_min: float = 0.0,
+        rho: float = 7.0,
         **kwargs
     ) -> torch.Tensor:
         """
-        Return logarithmic sigma schedule for DMD2.
+        Return Karras sigma schedule for DMD2.
 
-        DMD2 is a distilled model designed for 1-10 steps with log-spaced sigmas.
+        Uses Karras schedule (same as EDM/diffviews) for compatibility with
+        attribution indices built using the original diffviews generator.
 
         Args:
             num_steps: Number of denoising steps (typically 1-10)
             device: Target device
             noise_level_max: Starting noise level (0-100), default 100
             noise_level_min: Ending noise level (0-100), default 0
+            rho: Karras schedule parameter, default 7.0
             **kwargs: Ignored (for API consistency with other adapters)
 
         Returns:
             Sigma tensor (num_steps + 1,) from sigma_max to 0
-            Example for 6 steps: [80, 33, 10, 3, 1, 0.5, 0]
         """
         # Convert noise_level to sigma
         sigma_max = float(self.noise_level_to_native(torch.tensor(noise_level_max)))
         sigma_min = float(self.noise_level_to_native(torch.tensor(noise_level_min)))
-        # Ensure sigma_min is not zero for log schedule
+        # Ensure sigma_min is not zero for schedule
         sigma_min = max(sigma_min, self.SIGMA_MIN)
 
-        # Log-linear interpolation in log space, then append 0
-        sigmas = torch.logspace(
-            torch.log10(torch.tensor(sigma_max)),
-            torch.log10(torch.tensor(sigma_min)),
-            num_steps,
-            device=device
-        )
+        # Karras schedule: (max^(1/rho) + ramp * (min^(1/rho) - max^(1/rho)))^rho
+        ramp = torch.linspace(0, 1, num_steps, device=device)
+        min_inv_rho = sigma_min ** (1 / rho)
+        max_inv_rho = sigma_max ** (1 / rho)
+        sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
+
         # Round to model's internal sigma table for numerical stability
         # (same as EDM - both use EDMPrecond which has round_sigma)
         return torch.cat([self._model.round_sigma(sigmas), torch.zeros(1, device=device)])
