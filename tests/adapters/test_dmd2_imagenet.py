@@ -105,6 +105,29 @@ class TestDMD2ImageNetAdapterDiffusionMethods:
         assert sigmas[0] > 0
         assert sigmas[1] == 0.0
 
+    def test_get_timesteps_target_noise(self, mock_adapter):
+        """Test timestep generation with target_noise parameters for attribution."""
+        # Compute noise_level for sigma=0.5 (attribution target)
+        import math
+        target_sigma = 0.5
+        log_sigma = math.log(target_sigma)
+        log_min = math.log(mock_adapter.SIGMA_MIN)
+        log_max = math.log(mock_adapter.SIGMA_MAX)
+        target_noise_min = (log_sigma - log_min) / (log_max - log_min) * 100.0
+
+        sigmas = mock_adapter.get_timesteps(
+            6, device='cpu',
+            target_noise_max=100.0,
+            target_noise_min=target_noise_min
+        )
+
+        assert len(sigmas) == 7  # 6 steps + final 0
+        # First sigma should be sigma_max (80)
+        assert abs(sigmas[0].item() - 80.0) < 0.01
+        # Last non-zero sigma should be close to 0.5
+        assert abs(sigmas[-2].item() - 0.5) < 0.01
+        assert sigmas[-1] == 0.0
+
     def test_step(self, mock_adapter):
         """Test Euler stepping."""
         batch_size = 2

@@ -145,6 +145,8 @@ def generate(
     num_steps: int = 6,
     noise_level_max: float = 100.0,
     noise_level_min: float = 0.0,
+    target_noise_max: Optional[float] = None,
+    target_noise_min: Optional[float] = None,
     guidance_scale: float = 1.0,
     num_samples: int = 1,
     device: str = 'cuda',
@@ -169,8 +171,10 @@ def generate(
         class_label: Class label (0-999), random if None, -1 for uniform
         caption: Text caption for T2I models (overrides class_label)
         num_steps: Number of denoising steps
-        noise_level_max: Starting noise level (0-100), default 100 (pure noise)
-        noise_level_min: Ending noise level (0-100), default 0 (clean)
+        noise_level_max: Absolute max noise level (0-100), default 100
+        noise_level_min: Absolute min noise level (0-100), default 0
+        target_noise_max: Target starting noise level (defaults to noise_level_max)
+        target_noise_min: Target ending noise level (defaults to noise_level_min)
         guidance_scale: CFG scale (1.0=no guidance)
         num_samples: Number of images
         device: Device for generation
@@ -197,6 +201,8 @@ def generate(
         device=device,
         noise_level_max=noise_level_max,
         noise_level_min=noise_level_min,
+        target_noise_max=target_noise_max,
+        target_noise_min=target_noise_min,
         rho=rho,
         **schedule_kwargs
     )

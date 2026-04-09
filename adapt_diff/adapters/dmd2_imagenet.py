@@ -158,6 +158,8 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         device: str = 'cuda',
         noise_level_max: float = 100.0,
         noise_level_min: float = 0.0,
+        target_noise_max: float = None,
+        target_noise_min: float = None,
         rho: float = 7.0,
         **kwargs
     ) -> torch.Tensor:
@@ -170,17 +172,23 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         Args:
             num_steps: Number of denoising steps (typically 1-10)
             device: Target device
-            noise_level_max: Starting noise level (0-100), default 100
-            noise_level_min: Ending noise level (0-100), default 0
+            noise_level_max: Absolute max noise level (0-100), default 100
+            noise_level_min: Absolute min noise level (0-100), default 0
+            target_noise_max: Target starting noise level (defaults to noise_level_max)
+            target_noise_min: Target ending noise level (defaults to noise_level_min)
             rho: Karras schedule parameter, default 7.0
             **kwargs: Ignored (for API consistency with other adapters)
 
         Returns:
             Sigma tensor (num_steps + 1,) from sigma_max to 0
         """
+        # Use target values if provided, otherwise fall back to absolute range
+        effective_max = target_noise_max if target_noise_max is not None else noise_level_max
+        effective_min = target_noise_min if target_noise_min is not None else noise_level_min
+
         # Convert noise_level to sigma
-        sigma_max = float(self.noise_level_to_native(torch.tensor(noise_level_max)))
-        sigma_min = float(self.noise_level_to_native(torch.tensor(noise_level_min)))
+        sigma_max = float(self.noise_level_to_native(torch.tensor(effective_max)))
+        sigma_min = float(self.noise_level_to_native(torch.tensor(effective_min)))
         # Ensure sigma_min is not zero for schedule
         sigma_min = max(sigma_min, self.SIGMA_MIN)
 
