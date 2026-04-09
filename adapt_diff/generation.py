@@ -235,8 +235,11 @@ def generate(
         if return_noised_inputs:
             noised_input_images.append(tensor_to_uint8_image(adapter.decode(x)))
 
+        # Create batched sigma tensor to match diffviews behavior
+        t_batched = torch.ones(num_samples, device=device) * t
+
         # Forward with CFG
-        pred = adapter.forward_with_cfg(x, t, cond, uncond, guidance_scale)
+        pred = adapter.forward_with_cfg(x, t_batched, cond, uncond, guidance_scale)
 
         # Extract trajectory activations
         if extractor is not None:
@@ -256,12 +259,13 @@ def generate(
 
         # Capture intermediate image
         if return_intermediates:
-            x0_estimate = adapter.pred_to_sample(x, t, pred)
+            x0_estimate = adapter.pred_to_sample(x, t_batched, pred)
             intermediate_images.append(tensor_to_uint8_image(adapter.decode(x0_estimate)))
 
         # Single denoising step
         t_next = timesteps[i + 1]
-        x = adapter.step(x, t, pred, t_next=t_next)
+        t_next_batched = torch.ones(num_samples, device=device) * t_next
+        x = adapter.step(x, t_batched, pred, t_next=t_next_batched)
 
         # Apply masking if provided
         if masker is not None and mask_image is not None:
