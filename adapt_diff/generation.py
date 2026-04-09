@@ -2,6 +2,7 @@
 Image generation with trajectory extraction using adapter interface.
 
 Ported from diffviews.core.generator for model-agnostic generation.
+v2 - direct sigma mode for diffviews compatibility.
 """
 
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple
