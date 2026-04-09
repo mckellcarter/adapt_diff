@@ -27,6 +27,7 @@ adapt_diff/
 │   ├── base.py               # GeneratorAdapter ABC
 │   ├── hooks.py              # HookMixin utilities
 │   ├── registry.py           # Registration + entry-point discovery
+│   ├── generation.py         # High-level generate() API
 │   ├── adapters/
 │   │   ├── abu_custom_sd.py    # AbU Custom SD 512x512
 │   │   ├── dmd2_imagenet.py  # DMD2 ImageNet 64x64
@@ -45,6 +46,39 @@ adapt_diff/
 ```
 
 ## Quick Start
+
+```python
+from adapt_diff import get_adapter, generate
+
+# Load adapter from checkpoint
+AdapterClass = get_adapter('dmd2-imagenet-64')
+adapter = AdapterClass.from_checkpoint('path/to/dmd2.pkl', device='cuda')
+
+# Generate images (high-level API)
+result = generate(
+    adapter=adapter,
+    class_label=281,  # tabby cat
+    num_steps=6,
+    num_samples=4,
+    device='cuda',
+    seed=42,
+)
+images = result.images  # (4, 64, 64, 3) uint8
+
+# With trajectory extraction for attribution
+result = generate(
+    adapter=adapter,
+    class_label=281,
+    num_steps=6,
+    extract_layers=['encoder_bottleneck'],
+    return_trajectory=True,
+    return_intermediates=True,
+)
+activations = result.trajectory  # list of (B, D) arrays per step
+intermediates = result.intermediates  # list of images per step
+```
+
+### Low-level API
 
 ```python
 from adapt_diff import get_adapter, list_adapters
@@ -129,9 +163,11 @@ Each adapter provides sensible defaults via `get_default_config()`. Noise levels
 | Adapter | `default_steps` | `noise_max` | `noise_min` | Notes |
 |---------|----------------|-------------|-------------|-------|
 | EDM | 50 | 100.0 | 0.0 | Karras schedule, `rho=7.0` |
-| DMD2 | 5 | 100.0 | 5.0 | Distilled for few-step |
+| DMD2 | 5 | 100.0 | 0.5 | Karras schedule, ancestral sampling |
 | MSCOCO T2I | 20 | 100.0 | 0.0 | DDPM timesteps, `guidance_scale=7.5` |
 | AbU Custom SD | 50 | 100.0 | 0.0 | SD v1.4 latent space, `guidance_scale=7.5` |
+
+**Note on noise_level scale**: The 0-100 noise_level maps to native sigma via log interpolation. For attribution at a specific sigma (e.g., σ=0.5), use `adapter.native_to_noise_level(sigma)` to get the corresponding noise_level (~52.1 for DMD2).
 
 ### Adapter Properties
 
