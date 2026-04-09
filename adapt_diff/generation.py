@@ -202,13 +202,15 @@ def generate(
 
     # Use direct sigma values if provided (for diffviews compatibility)
     if sigma_max is not None and sigma_min is not None:
-        # Compute Karras schedule directly from sigma values
+        # Compute Karras schedule directly from sigma values (matching diffviews exactly)
+        # Use Python floats for exponentiation to avoid GPU precision issues
+        min_inv_rho = sigma_min ** (1.0 / rho)
+        max_inv_rho = sigma_max ** (1.0 / rho)
         ramp = torch.linspace(0, 1, num_steps, device=device)
-        min_inv_rho = sigma_min ** (1 / rho)
-        max_inv_rho = sigma_max ** (1 / rho)
         sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
         timesteps = torch.cat([sigmas, torch.zeros(1, device=device)])
         initial_sigma = sigma_max
+        print(f"[adapt_diff] Direct sigma mode: sigmas={sigmas.cpu().tolist()}")
     else:
         # Get timesteps from adapter using noise_level conversion
         timesteps = adapter.get_timesteps(
@@ -242,7 +244,9 @@ def generate(
     if initial_sigma is not None:
         # Direct sigma mode: generate noise * sigma_max (matches diffviews exactly)
         x = torch.randn(num_samples, adapter.in_channels, adapter.resolution, adapter.resolution, device=device)
+        print(f"[adapt_diff] Initial randn first 5 vals: {x.flatten()[:5].tolist()}")
         x = x * initial_sigma
+        print(f"[adapt_diff] After scaling by {initial_sigma}: x.mean={x.mean().item():.4f}, x.std={x.std().item():.4f}")
     else:
         x = adapter.get_initial_noise(
             batch_size=num_samples,
