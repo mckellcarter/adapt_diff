@@ -58,7 +58,7 @@ adapter = AdapterClass.from_checkpoint('path/to/dmd2.pkl', device='cuda')
 result = generate(
     adapter=adapter,
     class_label=281,  # tabby cat
-    num_steps=6,
+    num_steps=10,     # Use 10 steps to match training data
     num_samples=4,
     device='cuda',
     seed=42,
@@ -69,13 +69,25 @@ images = result.images  # (4, 64, 64, 3) uint8
 result = generate(
     adapter=adapter,
     class_label=281,
-    num_steps=6,
+    num_steps=10,
     extract_layers=['encoder_bottleneck'],
     return_trajectory=True,
     return_intermediates=True,
 )
 activations = result.trajectory  # list of (B, D) arrays per step
 intermediates = result.intermediates  # list of images per step
+
+# Direct sigma mode (for diffviews compatibility)
+# Bypasses noise_level conversion, computes Karras schedule directly
+result = generate(
+    adapter=adapter,
+    class_label=281,
+    num_steps=10,
+    sigma_max=80.0,   # Direct sigma values
+    sigma_min=0.5,    # Must match training extraction sigma
+    extract_layers=['encoder_bottleneck'],
+    return_trajectory=True,
+)
 ```
 
 ### Low-level API
@@ -163,11 +175,15 @@ Each adapter provides sensible defaults via `get_default_config()`. Noise levels
 | Adapter | `default_steps` | `noise_max` | `noise_min` | Notes |
 |---------|----------------|-------------|-------------|-------|
 | EDM | 50 | 100.0 | 0.0 | Karras schedule, `rho=7.0` |
-| DMD2 | 5 | 100.0 | 0.5 | Karras schedule, ancestral sampling |
+| DMD2 | 10 | 100.0 | 0.5 | Karras schedule, ancestral sampling |
 | MSCOCO T2I | 20 | 100.0 | 0.0 | DDPM timesteps, `guidance_scale=7.5` |
 | AbU Custom SD | 50 | 100.0 | 0.0 | SD v1.4 latent space, `guidance_scale=7.5` |
 
 **Note on noise_level scale**: The 0-100 noise_level maps to native sigma via log interpolation. For attribution at a specific sigma (e.g., σ=0.5), use `adapter.native_to_noise_level(sigma)` to get the corresponding noise_level (~52.1 for DMD2).
+
+**Note on num_steps for attribution**: When extracting activations for attribution, `num_steps` must match the number of steps used to build the training index. The activation at a given sigma depends on the entire denoising trajectory, not just the final sigma value. For DMD2 with yodal training data, use `num_steps=10`.
+
+**Direct sigma mode**: For exact control over the sigma schedule (e.g., to match diffviews), use `sigma_max` and `sigma_min` parameters instead of `noise_level_max/min`. This bypasses noise_level conversion and computes the Karras schedule directly from sigma values.
 
 ### Adapter Properties
 
