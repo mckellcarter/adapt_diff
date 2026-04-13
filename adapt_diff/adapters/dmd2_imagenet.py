@@ -314,6 +314,11 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         """DMD2 uses class conditioning."""
         return 'class'
 
+    @property
+    def training_data_id(self) -> str:
+        """Training dataset identifier for yodal-train-items."""
+        return 'imagenet-64x64'
+
     def forward_with_cfg(
         self,
         x: torch.Tensor,
