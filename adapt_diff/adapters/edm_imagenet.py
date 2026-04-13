@@ -326,6 +326,11 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         """Training dataset identifier for yodal-train-items."""
         return 'imagenet-64x64'
 
+    @property
+    def default_checkpoint_key(self) -> str:
+        """Default R2 key for EDM ImageNet 64x64 checkpoint."""
+        return 'data/edm/checkpoints/edm-imagenet-64x64-cond-adm.pkl'
+
     def forward_with_cfg(
         self,
         x: torch.Tensor,
