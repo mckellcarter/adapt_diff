@@ -319,6 +319,11 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         """Training dataset identifier for yodal-train-items."""
         return 'imagenet-64x64'
 
+    @property
+    def default_checkpoint_key(self) -> str:
+        """Default R2 key for DMD2 ImageNet 64x64 checkpoint."""
+        return 'data/dmd2/checkpoints/dmd2-imagenet-64-10step.pkl'
+
     def forward_with_cfg(
         self,
         x: torch.Tensor,

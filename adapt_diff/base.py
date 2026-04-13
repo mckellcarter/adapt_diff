@@ -134,6 +134,17 @@ class GeneratorAdapter(ABC):
         return None
 
     @property
+    def default_checkpoint_key(self) -> Optional[str]:
+        """
+        Default R2/storage key for model checkpoint.
+
+        Returns:
+            R2 path to checkpoint (e.g., 'data/dmd2/checkpoints/model.pkl')
+            or None if no default is specified.
+        """
+        return None
+
+    @property
     def latent_scale_factor(self) -> int:
         """
         Spatial downsampling factor for latent models.
