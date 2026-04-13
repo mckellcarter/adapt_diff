@@ -123,6 +123,17 @@ class GeneratorAdapter(ABC):
         pass
 
     @property
+    def training_data_id(self) -> Optional[str]:
+        """
+        Identifier for training dataset, used by yodal-train-items.
+
+        Returns:
+            Dataset ID (e.g., 'imagenet-64x64') or None if not specified.
+            Used to look up training images, labels, and activation data.
+        """
+        return None
+
+    @property
     def latent_scale_factor(self) -> int:
         """
         Spatial downsampling factor for latent models.
@@ -152,6 +163,29 @@ class GeneratorAdapter(ABC):
                 - DDPM/SD: timestep (integer 0-999)
 
         Each adapter implements this based on its noise parameterization.
+        """
+        pass
+
+    @abstractmethod
+    def native_to_noise_level(
+        self,
+        native: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert model's native format to universal noise_level (0-100).
+
+        Inverse of noise_level_to_native(). Used to convert timesteps from
+        generation back to noise_level for storage and display.
+
+        Args:
+            native: Native noise parameter
+                - EDM/DMD2: sigma value
+                - DDPM/SD: timestep (integer 0-999)
+
+        Returns:
+            noise_level: Noise level as percentage (0-100)
+                - 0 = fully denoised (clean)
+                - 100 = fully noised (pure noise)
         """
         pass
 

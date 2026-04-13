@@ -125,6 +125,30 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         sigma = self.SIGMA_MIN ** (1 - t) * self.SIGMA_MAX ** t
         return sigma
 
+    def native_to_noise_level(
+        self,
+        sigma: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert EDM sigma to noise_level (0-100).
+
+        Inverse of noise_level_to_native:
+        - sigma_min (0.002) → noise_level 0
+        - sigma_max (80.0) → noise_level 100
+
+        Args:
+            sigma: EDM sigma value
+
+        Returns:
+            noise_level: Noise level as percentage (0-100)
+        """
+        import math
+        log_sigma = torch.log(sigma)
+        log_min = math.log(self.SIGMA_MIN)
+        log_max = math.log(self.SIGMA_MAX)
+        t = (log_sigma - log_min) / (log_max - log_min)
+        return t * 100.0
+
     def forward(
         self,
         x: torch.Tensor,
@@ -296,6 +320,11 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
     def conditioning_type(self) -> str:
         """EDM uses class conditioning."""
         return 'class'
+
+    @property
+    def training_data_id(self) -> str:
+        """Training dataset identifier for yodal-train-items."""
+        return 'imagenet-64x64'
 
     def forward_with_cfg(
         self,

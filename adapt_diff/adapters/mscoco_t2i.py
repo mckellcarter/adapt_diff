@@ -123,6 +123,25 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         timestep = (noise_level / 100.0 * self.TIMESTEP_MAX).long()
         return timestep
 
+    def native_to_noise_level(
+        self,
+        timestep: torch.Tensor
+    ) -> torch.Tensor:
+        """
+        Convert DDPM timestep to noise_level (0-100).
+
+        Inverse of noise_level_to_native:
+        - timestep 0 → noise_level 0 (fully denoised)
+        - timestep 999 → noise_level 100 (fully noised)
+
+        Args:
+            timestep: DDPM timestep (0-999)
+
+        Returns:
+            noise_level: Noise level as percentage (0-100)
+        """
+        return timestep.float() / self.TIMESTEP_MAX * 100.0
+
     def forward(
         self,
         x: torch.Tensor,
