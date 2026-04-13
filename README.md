@@ -28,6 +28,7 @@ adapt_diff/
 │   ├── hooks.py              # HookMixin utilities
 │   ├── registry.py           # Registration + entry-point discovery
 │   ├── generation.py         # High-level generate() API
+│   ├── extraction.py         # ActivationExtractor + utilities
 │   ├── adapters/
 │   │   ├── abu_custom_sd.py    # AbU Custom SD 512x512
 │   │   ├── dmd2_imagenet.py  # DMD2 ImageNet 64x64
@@ -112,17 +113,69 @@ print(shapes)  # {'encoder_bottleneck': (512, 8, 8), ...}
 
 ## Activation Extraction
 
+Use `ActivationExtractor` for hook-based activation capture:
+
 ```python
-# Register hooks for activation extraction
+from adapt_diff import get_adapter, ActivationExtractor
+
+adapter = get_adapter('dmd2-imagenet-64').from_checkpoint('dmd2.pkl', device='cuda')
+
+# Context manager handles hook registration/cleanup
+with ActivationExtractor(adapter, ['encoder_bottleneck']) as extractor:
+    adapter.forward(x_noisy, sigma, class_labels)
+    activations = extractor.get_activations()  # Dict[str, Tensor]
+
+# Or manual lifecycle
+extractor = ActivationExtractor(adapter, ['encoder_bottleneck', 'decoder'])
+extractor.register_hooks()
+adapter.forward(x_noisy, sigma, class_labels)
+activations = extractor.get_activations()
+extractor.clear()  # Clear for next batch
+# ... more forward passes ...
+extractor.remove_hooks()
+```
+
+### Extraction Utilities
+
+Save, load, and convert activation files:
+
+```python
+from adapt_diff import (
+    flatten_activations,
+    save_activations,
+    load_activations,
+    convert_to_fast_format,
+    load_fast_activations,
+)
+
+# Flatten multi-layer activations to single vector
+# Dict[str, (B, D_i)] -> (B, sum(D_i))
+flat = flatten_activations(activations)
+
+# Save to .npz with metadata
+save_activations(activations, 'output/acts', metadata={'sigma': 0.5})
+
+# Load back
+activations, metadata = load_activations('output/acts')
+
+# Convert to fast .npy format (~30x faster loading)
+convert_to_fast_format('output/acts.npz', 'output/acts_fast.npy')
+
+# Memory-mapped loading for large datasets
+acts = load_fast_activations('output/acts_fast.npy', mmap_mode='r')
+```
+
+### Low-level Hook API
+
+For custom hook logic:
+
+```python
+# Manual hook registration
 def extraction_hook(module, input, output):
     activations[name] = output.detach().cpu()
 
 handles = adapter.register_activation_hooks(['encoder_bottleneck'], extraction_hook)
-
-# Run forward pass
 output = adapter.forward(x, sigma, class_labels)
-
-# Clean up
 for h in handles:
     h.remove()
 ```
