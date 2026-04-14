@@ -18,6 +18,9 @@ from .extraction import (
     convert_to_fast_format,
     load_fast_activations,
     get_fast_format_info,
+    ActivationMasker,
+    unflatten_activation,
+    load_activation_from_npz,
 )
 from .device import get_device, get_device_info, clear_cache
 
@@ -46,6 +49,10 @@ __all__ = [
     "convert_to_fast_format",
     "load_fast_activations",
     "get_fast_format_info",
+    # Masking
+    "ActivationMasker",
+    "unflatten_activation",
+    "load_activation_from_npz",
     # Device
     "get_device",
     "get_device_info",

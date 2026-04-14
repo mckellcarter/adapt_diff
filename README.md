@@ -165,6 +165,46 @@ convert_to_fast_format('output/acts.npz', 'output/acts_fast.npy')
 acts = load_fast_activations('output/acts_fast.npy', mmap_mode='r')
 ```
 
+### Activation Masking
+
+Use `ActivationMasker` to replace layer outputs with fixed values during forward pass:
+
+```python
+from adapt_diff import get_adapter, ActivationMasker
+
+adapter = get_adapter('dmd2-imagenet-64').from_checkpoint('dmd2.pkl', device='cuda')
+
+# Context manager handles hook registration/cleanup
+masker = ActivationMasker(adapter)
+masker.set_mask('encoder_bottleneck', target_activation)  # (1, C, H, W) tensor
+
+with masker:
+    # All forward passes will use the fixed activation for this layer
+    output = adapter.forward(x_noisy, sigma, class_labels)
+
+# Or manual lifecycle
+masker.register_hooks(['encoder_bottleneck'])
+output = adapter.forward(x_noisy, sigma, class_labels)
+masker.remove_hooks()
+
+# Batch expansion: single mask automatically expands to batch size
+masker.set_mask('layer', torch.randn(1, 512, 8, 8))  # mask shape
+adapter.forward(torch.randn(4, 3, 64, 64), sigma, labels)  # batch of 4 → mask expanded
+```
+
+### Masking Utilities
+
+```python
+from adapt_diff import unflatten_activation, load_activation_from_npz
+
+# Reshape flattened activation back to spatial format
+# (1, C*H*W) → (1, C, H, W)
+spatial = unflatten_activation(flat_tensor, target_shape=(512, 8, 8))
+
+# Load single layer from NPZ file
+activation = load_activation_from_npz('activations.npz', 'encoder_bottleneck')
+```
+
 ### Low-level Hook API
 
 For custom hook logic:
