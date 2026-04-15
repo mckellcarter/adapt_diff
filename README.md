@@ -78,6 +78,21 @@ result = generate(
 activations = result.trajectory  # list of (B, D) arrays per step
 intermediates = result.intermediates  # list of images per step
 
+# With activation masking (constrain generation)
+from adapt_diff import ActivationMasker
+
+masker = ActivationMasker(adapter)
+masker.set_mask('encoder_bottleneck', target_activation)
+
+result = generate(
+    adapter=adapter,
+    class_label=281,
+    num_steps=10,
+    activation_masker=masker,  # Apply masking during generation
+    mask_steps=3,              # Remove hooks after 3 steps (default: all)
+    noise_mode="fixed",        # "stochastic", "fixed", or "zero"
+)
+
 # Direct sigma mode (for diffviews compatibility)
 # Bypasses noise_level conversion, computes Karras schedule directly
 result = generate(
