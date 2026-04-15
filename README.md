@@ -93,14 +93,13 @@ result = generate(
     noise_mode="fixed",        # "stochastic", "fixed", or "zero"
 )
 
-# Direct sigma mode (for diffviews compatibility)
-# Bypasses noise_level conversion, computes Karras schedule directly
+# With noise_level control (0-100 scale, model-agnostic)
 result = generate(
     adapter=adapter,
     class_label=281,
     num_steps=10,
-    sigma_max=80.0,   # Direct sigma values
-    sigma_min=0.5,    # Must match training extraction sigma
+    noise_level_max=100.0,  # 100 = pure noise (default)
+    noise_level_min=0.5,    # 0.5 = mostly clean
     extract_layers=['encoder_bottleneck'],
     return_trajectory=True,
 )
@@ -290,8 +289,6 @@ Each adapter provides sensible defaults via `get_default_config()`. Noise levels
 **Note on noise_level scale**: The 0-100 noise_level maps to native sigma via log interpolation. For attribution at a specific sigma (e.g., σ=0.5), use `adapter.native_to_noise_level(sigma)` to get the corresponding noise_level (~52.1 for DMD2).
 
 **Note on num_steps for attribution**: When extracting activations for attribution, `num_steps` must match the number of steps used to build the training index. The activation at a given sigma depends on the entire denoising trajectory, not just the final sigma value. For DMD2 with yodal training data, use `num_steps=10`.
-
-**Direct sigma mode**: For exact control over the sigma schedule (e.g., to match diffviews), use `sigma_max` and `sigma_min` parameters instead of `noise_level_max/min`. This bypasses noise_level conversion and computes the Karras schedule directly from sigma values.
 
 ### Adapter Properties
 
