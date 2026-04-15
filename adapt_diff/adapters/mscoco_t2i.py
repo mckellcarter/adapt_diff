@@ -264,6 +264,11 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
             x_{t-1}: Less noisy latent
         """
         # t_next and step_noise ignored - scheduler handles internally
+        # Convert batched tensor to integer timestep for DDPM scheduler
+        if hasattr(t, 'item'):
+            t = int(t.flatten()[0].item())
+        else:
+            t = int(t)
         return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
 
     def get_initial_noise(
