@@ -442,6 +442,16 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         """MSCOCO T2I uses text conditioning."""
         return 'text'
 
+    @property
+    def training_data_id(self) -> str:
+        """Dataset ID for yodal-train-items."""
+        return "coco-train2017"
+
+    @property
+    def default_checkpoint_key(self) -> str:
+        """R2 path to default checkpoint (diffviews bucket)."""
+        return "diffviews/data/mscoco/checkpoints/mscoco-t2i-128.bin"
+
     def register_activation_hooks(
         self,
         layer_names: List[str],
