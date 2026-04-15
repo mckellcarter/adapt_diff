@@ -151,9 +151,6 @@ def generate(
     noise_level_min: float = 0.0,
     target_noise_max: Optional[float] = None,
     target_noise_min: Optional[float] = None,
-    # Direct sigma parameters (bypass noise_level conversion)
-    sigma_max: Optional[float] = None,
-    sigma_min: Optional[float] = None,
     guidance_scale: float = 1.0,
     num_samples: int = 1,
     device: str = 'cuda',
@@ -187,8 +184,6 @@ def generate(
         noise_level_min: Absolute min noise level (0-100), default 0
         target_noise_max: Target starting noise level (defaults to noise_level_max)
         target_noise_min: Target ending noise level (defaults to noise_level_min)
-        sigma_max: Direct sigma max (bypasses noise_level, for diffviews compatibility)
-        sigma_min: Direct sigma min (bypasses noise_level, for diffviews compatibility)
         guidance_scale: CFG scale (1.0=no guidance)
         num_samples: Number of images
         device: Device for generation
@@ -215,29 +210,17 @@ def generate(
         torch.manual_seed(seed)
         torch.use_deterministic_algorithms(True, warn_only=True)
 
-    # Use direct sigma values if provided (for diffviews compatibility)
-    if sigma_max is not None and sigma_min is not None:
-        # Compute Karras schedule directly from sigma values (matching diffviews exactly)
-        # Use Python floats for exponentiation to avoid GPU precision issues
-        min_inv_rho = sigma_min ** (1.0 / rho)
-        max_inv_rho = sigma_max ** (1.0 / rho)
-        ramp = torch.linspace(0, 1, num_steps, device=device)
-        sigmas = (max_inv_rho + ramp * (min_inv_rho - max_inv_rho)) ** rho
-        timesteps = torch.cat([sigmas, torch.zeros(1, device=device)])
-        initial_sigma = sigma_max
-    else:
-        # Get timesteps from adapter using noise_level conversion
-        timesteps = adapter.get_timesteps(
-            num_steps,
-            device=device,
-            noise_level_max=noise_level_max,
-            noise_level_min=noise_level_min,
-            target_noise_max=target_noise_max,
-            target_noise_min=target_noise_min,
-            rho=rho,
-            **schedule_kwargs
-        )
-        initial_sigma = None  # Use adapter's get_initial_noise
+    # Get timesteps from adapter using model-agnostic noise_level interface
+    timesteps = adapter.get_timesteps(
+        num_steps,
+        device=device,
+        noise_level_max=noise_level_max,
+        noise_level_min=noise_level_min,
+        target_noise_max=target_noise_max,
+        target_noise_min=target_noise_min,
+        rho=rho,
+        **schedule_kwargs
+    )
 
     # Prepare conditioning
     cond, uncond, labels = _prepare_conditioning(
@@ -271,17 +254,12 @@ def generate(
         extractor = ActivationExtractor(adapter, extract_layers)
         extractor.register_hooks()
 
-    # Generate initial noise
-    if initial_sigma is not None:
-        # Direct sigma mode: generate noise * sigma_max (matches diffviews exactly)
-        x = torch.randn(num_samples, adapter.in_channels, adapter.resolution, adapter.resolution, device=device)
-        x = x * initial_sigma
-    else:
-        x = adapter.get_initial_noise(
-            batch_size=num_samples,
-            device=device,
-            noise_level=noise_level_max
-        )
+    # Generate initial noise using adapter's model-agnostic interface
+    x = adapter.get_initial_noise(
+        batch_size=num_samples,
+        device=device,
+        noise_level=noise_level_max
+    )
 
     # Iterative denoising with activation masker management
     try:
