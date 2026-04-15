@@ -221,6 +221,7 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         t: torch.Tensor,
         model_output: torch.Tensor,
         t_next: Optional[torch.Tensor] = None,
+        step_noise: Optional[torch.Tensor] = None,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -231,6 +232,7 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
             t: Current sigma value (scalar or (B,))
             model_output: Denoised output from forward() (B, C, H, W)
             t_next: Next sigma value (required for EDM)
+            step_noise: Ignored (Euler is deterministic)
             **kwargs: Unused
 
         Returns:
@@ -239,6 +241,7 @@ class EDMImageNetAdapter(HookMixin, GeneratorAdapter):
         if t_next is None:
             raise ValueError("EDM step() requires t_next parameter")
 
+        # step_noise ignored for Euler stepping (deterministic)
         # Euler step: x_next = x + (t_next - t) * dx/dt
         d_cur = (x_t - model_output) / t
         return x_t + (t_next - t) * d_cur
