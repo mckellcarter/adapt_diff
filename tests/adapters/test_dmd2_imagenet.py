@@ -69,21 +69,19 @@ class TestDMD2ImageNetAdapterDiffusionMethods:
     """Tests for new diffusion-specific methods."""
 
     def test_get_timesteps(self, mock_adapter):
-        """Test log-spaced sigma schedule generation."""
+        """Test Karras sigma schedule generation."""
         num_steps = 6
         sigmas = mock_adapter.get_timesteps(num_steps, device='cpu')
 
         assert isinstance(sigmas, torch.Tensor)
         assert len(sigmas) == num_steps + 1  # Includes final 0
-        # Sigmas should be in descending order
-        assert sigmas[0] > sigmas[-2]  # -2 because -1 is 0
+        # Sigmas should be in descending order (monotonically decreasing)
+        for i in range(len(sigmas) - 1):
+            assert sigmas[i] > sigmas[i + 1]
+        # Last sigma should be 0
         assert sigmas[-1] == 0.0
-        # Check it's log-spaced (roughly)
-        # Ratios between consecutive sigmas should be similar
-        ratios = sigmas[:-1] / sigmas[1:]
-        # Last ratio will be inf (div by 0), so exclude it
-        ratios = ratios[:-1]
-        assert ratios.std() < ratios.mean()  # Relatively consistent
+        # First sigma should be close to SIGMA_MAX (80.0)
+        assert 70.0 < sigmas[0] < 90.0
 
     def test_get_timesteps_custom_params(self, mock_adapter):
         """Test timestep generation with custom noise_level parameters."""
@@ -143,14 +141,15 @@ class TestDMD2ImageNetAdapterDiffusionMethods:
         # Verify it's not just returning input
         assert not torch.allclose(x_next, x_t)
 
-    def test_step_requires_t_next(self, mock_adapter):
-        """Test that step raises without t_next."""
+    def test_step_without_t_next_returns_prediction(self, mock_adapter):
+        """Test that step returns prediction when t_next is None (final step)."""
         x_t = torch.randn(1, 3, 64, 64)
         t = torch.tensor([10.0])
         model_output = torch.randn(1, 3, 64, 64)
 
-        with pytest.raises(ValueError, match="t_next"):
-            mock_adapter.step(x_t, t, model_output)
+        # DMD2 step() returns model_output when t_next is None (final step)
+        result = mock_adapter.step(x_t, t, model_output)
+        assert torch.allclose(result, model_output)
 
     def test_get_initial_noise(self, mock_adapter):
         """Test initial noise generation."""

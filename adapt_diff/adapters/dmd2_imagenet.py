@@ -207,6 +207,7 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
         t: torch.Tensor,
         model_output: torch.Tensor,
         t_next: Optional[torch.Tensor] = None,
+        step_noise: Optional[torch.Tensor] = None,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -223,6 +224,7 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             t: Current sigma value (scalar or (B,))
             model_output: Denoised x0 prediction from forward() (B, C, H, W)
             t_next: Next sigma value (0 for final step)
+            step_noise: Pre-generated noise (None=fresh randn)
             **kwargs: Unused
 
         Returns:
@@ -233,7 +235,7 @@ class DMD2ImageNetAdapter(HookMixin, GeneratorAdapter):
             return model_output
 
         # Ancestral sampling: x0_pred + sigma_next * noise
-        noise = torch.randn_like(model_output)
+        noise = step_noise if step_noise is not None else torch.randn_like(model_output)
         return model_output + t_next * noise
 
     def get_initial_noise(

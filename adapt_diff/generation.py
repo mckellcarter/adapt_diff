@@ -5,12 +5,15 @@ Ported from diffviews.core.generator for model-agnostic generation.
 Supports direct sigma mode for diffviews compatibility.
 """
 
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import torch
 
 from .base import GeneratorAdapter
+
+if TYPE_CHECKING:
+    from .extraction import ActivationMasker
 
 
 class GenerationResult(NamedTuple):
@@ -155,7 +158,12 @@ def generate(
     num_samples: int = 1,
     device: str = 'cuda',
     seed: Optional[int] = None,
-    # Masking (optional)
+    # Activation masking (optional)
+    activation_masker: Optional["ActivationMasker"] = None,
+    mask_steps: Optional[int] = None,
+    # Noise control
+    noise_mode: str = "stochastic",
+    # Legacy masking (for inpainting)
     masker: Optional[Any] = None,
     mask_image: Optional[torch.Tensor] = None,
     # Trajectory extraction (optional)
@@ -185,7 +193,13 @@ def generate(
         num_samples: Number of images
         device: Device for generation
         seed: Random seed
-        masker: Optional masker object with apply_mask(x, t, mask) method
+        activation_masker: ActivationMasker to replace layer outputs during generation
+        mask_steps: Number of steps to keep masker active (default: all steps)
+        noise_mode: Noise mode for stochastic samplers:
+            - "stochastic": Fresh random noise at each step (default)
+            - "fixed": Same pre-generated noise sequence (reproducible)
+            - "zero": No noise added (deterministic)
+        masker: Optional masker object with apply_mask(x, t, mask) for inpainting
         mask_image: Optional mask tensor for inpainting
         extract_layers: Layers to extract for trajectory
         return_trajectory: Return activations at each step
@@ -230,6 +244,23 @@ def generate(
         adapter, class_label, caption, num_samples, device
     )
 
+    # Pre-generate step noises based on mode
+    noise_shape = (num_samples, adapter.in_channels, adapter.resolution, adapter.resolution)
+    if noise_mode == "zero":
+        step_noises = [torch.zeros(noise_shape, device=device) for _ in range(num_steps - 1)]
+    elif noise_mode == "fixed":
+        rng = torch.Generator(device=device).manual_seed(seed if seed is not None else 42)
+        step_noises = [torch.randn(noise_shape, device=device, generator=rng)
+                       for _ in range(num_steps - 1)]
+    else:  # stochastic (default)
+        step_noises = [None] * (num_steps - 1)
+
+    # Register activation masker if provided
+    if activation_masker is not None:
+        activation_masker.register_hooks()
+        if mask_steps is None:
+            mask_steps = num_steps  # Keep masker active for all steps by default
+
     # Setup trajectory extraction
     trajectory_activations = []
     intermediate_images = []
@@ -252,50 +283,59 @@ def generate(
             noise_level=noise_level_max
         )
 
-    # Iterative denoising
-    for i, t in enumerate(timesteps[:-1]):
-        # Capture noised input before denoising
-        if return_noised_inputs:
-            noised_input_images.append(tensor_to_uint8_image(adapter.decode(x)))
+    # Iterative denoising with activation masker management
+    try:
+        for i, t in enumerate(timesteps[:-1]):
+            # Remove activation masker after mask_steps
+            if activation_masker is not None and i == mask_steps:
+                activation_masker.remove_hooks()
 
-        # Create batched sigma tensor to match diffviews behavior
-        t_batched = torch.ones(num_samples, device=device) * t
+            # Capture noised input before denoising
+            if return_noised_inputs:
+                noised_input_images.append(tensor_to_uint8_image(adapter.decode(x)))
 
-        # Forward with CFG
-        pred = adapter.forward_with_cfg(x, t_batched, cond, uncond, guidance_scale)
+            # Create batched sigma tensor to match diffviews behavior
+            t_batched = torch.ones(num_samples, device=device) * t
 
-        # Extract trajectory activations
+            # Forward with CFG
+            pred = adapter.forward_with_cfg(x, t_batched, cond, uncond, guidance_scale)
+
+            # Extract trajectory activations
+            if extractor is not None:
+                acts = extractor.get_activations()
+                layer_acts = []
+                for layer_name in sorted(extract_layers):
+                    act = acts.get(layer_name)
+                    if act is not None:
+                        if len(act.shape) == 4:
+                            B, C, H, W = act.shape
+                            act = act.reshape(B, -1)
+                        layer_acts.append(act.numpy())
+                if layer_acts:
+                    concat_act = np.concatenate(layer_acts, axis=1)
+                    trajectory_activations.append(concat_act)
+                extractor.clear()
+
+            # Capture intermediate image
+            if return_intermediates:
+                x0_estimate = adapter.pred_to_sample(x, t_batched, pred)
+                intermediate_images.append(tensor_to_uint8_image(adapter.decode(x0_estimate)))
+
+            # Single denoising step with noise control
+            t_next = timesteps[i + 1]
+            t_next_batched = torch.ones(num_samples, device=device) * t_next
+            step_noise = step_noises[i] if i < len(step_noises) else None
+            x = adapter.step(x, t_batched, pred, t_next=t_next_batched, step_noise=step_noise)
+
+            # Apply inpainting mask if provided
+            if masker is not None and mask_image is not None:
+                x = masker.apply_mask(x, t_next, mask_image)
+    finally:
+        # Ensure cleanup of hooks
         if extractor is not None:
-            acts = extractor.get_activations()
-            layer_acts = []
-            for layer_name in sorted(extract_layers):
-                act = acts.get(layer_name)
-                if act is not None:
-                    if len(act.shape) == 4:
-                        B, C, H, W = act.shape
-                        act = act.reshape(B, -1)
-                    layer_acts.append(act.numpy())
-            if layer_acts:
-                concat_act = np.concatenate(layer_acts, axis=1)
-                trajectory_activations.append(concat_act)
-            extractor.clear()
-
-        # Capture intermediate image
-        if return_intermediates:
-            x0_estimate = adapter.pred_to_sample(x, t_batched, pred)
-            intermediate_images.append(tensor_to_uint8_image(adapter.decode(x0_estimate)))
-
-        # Single denoising step
-        t_next = timesteps[i + 1]
-        t_next_batched = torch.ones(num_samples, device=device) * t_next
-        x = adapter.step(x, t_batched, pred, t_next=t_next_batched)
-
-        # Apply masking if provided
-        if masker is not None and mask_image is not None:
-            x = masker.apply_mask(x, t_next, mask_image)
-
-    if extractor is not None:
-        extractor.remove_hooks()
+            extractor.remove_hooks()
+        if activation_masker is not None:
+            activation_masker.remove_hooks()
 
     # Decode and convert to uint8
     x = adapter.decode(x)
