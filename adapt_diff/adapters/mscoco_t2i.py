@@ -209,34 +209,38 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         device: str = 'cuda',
         noise_level_max: float = 100.0,
         noise_level_min: float = 0.0,
+        target_noise_max: float = None,
+        target_noise_min: float = None,
         **kwargs
     ) -> torch.Tensor:
         """
         Return DDPM timestep schedule.
 
+        Generates num_steps evenly spaced timesteps within the target range,
+        consistent with DMD2/EDM behavior.
+
         Args:
             num_steps: Number of denoising steps
             device: Target device
-            noise_level_max: Starting noise level (0-100), default 100
-            noise_level_min: Ending noise level (0-100), default 0
-            **kwargs: Ignored
+            noise_level_max: Absolute max noise level (0-100), default 100
+            noise_level_min: Absolute min noise level (0-100), default 0
+            target_noise_max: Target starting noise level (defaults to noise_level_max)
+            target_noise_min: Target ending noise level (defaults to noise_level_min)
+            **kwargs: Ignored (for API consistency with other adapters)
 
         Returns:
             Timesteps tensor (num_steps,) in descending order
-
-        Note: DDPM scheduler generates its own schedule. noise_level_max/min
-        are used to clip the range if needed.
         """
-        self._scheduler.set_timesteps(num_steps, device=device)
-        timesteps = self._scheduler.timesteps
+        # Use target values if provided, otherwise fall back to absolute range
+        effective_max = target_noise_max if target_noise_max is not None else noise_level_max
+        effective_min = target_noise_min if target_noise_min is not None else noise_level_min
 
-        # Optionally clip to noise_level range
-        if noise_level_max < 100.0 or noise_level_min > 0.0:
-            t_max = int(self.noise_level_to_native(torch.tensor(noise_level_max)))
-            t_min = int(self.noise_level_to_native(torch.tensor(noise_level_min)))
-            # Filter timesteps to the range
-            mask = (timesteps <= t_max) & (timesteps >= t_min)
-            timesteps = timesteps[mask]
+        # Convert noise_level to DDPM timesteps
+        t_max = int(effective_max / 100.0 * self.TIMESTEP_MAX)
+        t_min = int(effective_min / 100.0 * self.TIMESTEP_MAX)
+
+        # Generate num_steps evenly spaced timesteps in range (descending)
+        timesteps = torch.linspace(t_max, t_min, num_steps, device=device).long()
 
         return timesteps
 
