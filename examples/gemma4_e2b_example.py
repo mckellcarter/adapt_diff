@@ -4,14 +4,22 @@ Example: Gemma 4 E2B text generation with activation extraction.
 
 Prerequisites:
     pip install transformers>=4.40.0 sentencepiece accelerate
-    huggingface-cli login  # Gemma requires agreement to terms
+    huggingface-cli login  # Gemma requires agreement to terms (for HF download)
 
 For Apple Silicon with MLX:
     pip install mlx>=0.15.0 mlx-lm>=0.15.0
 
 Usage:
+    # From HuggingFace
     python examples/gemma4_e2b_example.py
-    python examples/gemma4_e2b_example.py --device mps --backend mlx
+
+    # From local path (download first with: huggingface-cli download google/gemma-2-2b-it)
+    python examples/gemma4_e2b_example.py --model /path/to/gemma-2-2b-it
+
+    # Apple Silicon
+    python examples/gemma4_e2b_example.py --device mps --backend torch
+
+    # Custom prompt
     python examples/gemma4_e2b_example.py --prompt "Write a haiku about coding"
 """
 
@@ -26,7 +34,7 @@ def main():
     parser = argparse.ArgumentParser(description='Gemma 4 E2B generation example')
     parser.add_argument(
         '--model', default='google/gemma-2-2b-it',
-        help='HuggingFace model ID or local path'
+        help='HuggingFace model ID or local path to downloaded model'
     )
     parser.add_argument(
         '--device', default=None,
