@@ -618,13 +618,7 @@ mlx = ["mlx>=0.15.0", "mlx-lm>=0.15.0"]
 - [x] Phase 1: Create `adapters/gemma4_e2b.py` adapter
 - [x] Phase 2: Extend `generation.py` with autoregressive branch + `TextGenerationResult`
 - [x] Phase 2: Extend `device.py` with `get_backend()` and `supports_mlx()`
-- [ ] Phase 3: Add unit tests for Gemma4E2BAdapter
-- [ ] Phase 3: Verify existing diffusion tests still pass
+- [x] Phase 3: Add unit tests for Gemma4E2BAdapter (35 tests)
+- [x] Phase 3: Verify existing diffusion tests still pass (129 passed)
 
----
-
-## Continuation Prompt
-
-```
-Continue Gemma 4 E2B adapter implementation per docs/plan_gemma4_e2b_adapter.md. Phase 2 complete. Now implement Phase 3: add unit tests for Gemma4E2BAdapter (mock model, no GPU required) and verify existing diffusion tests still pass.
-```
+**Implementation complete.**
