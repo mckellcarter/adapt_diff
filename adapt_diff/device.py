@@ -66,3 +66,34 @@ def clear_cache(device: str = None):
     if device is None or "cuda" in str(device):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+
+def supports_mlx() -> bool:
+    """Check if MLX is available."""
+    try:
+        import mlx  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def get_backend(device: str = None, prefer_backend: str = 'auto') -> str:
+    """
+    Select optimal backend for device.
+
+    Args:
+        device: Target device ('cuda', 'mps', 'cpu', or None for auto)
+        prefer_backend: 'torch', 'mlx', or 'auto'
+
+    Returns:
+        'torch' or 'mlx'
+    """
+    if prefer_backend != 'auto':
+        return prefer_backend
+
+    device = device or get_device()
+
+    if device == 'mps' and supports_mlx():
+        return 'mlx'
+
+    return 'torch'

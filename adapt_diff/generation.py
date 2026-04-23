@@ -1,11 +1,12 @@
 """
-Image generation with trajectory extraction using adapter interface.
+Generation with trajectory extraction using adapter interface.
 
-Ported from diffviews.core.generator for model-agnostic generation.
-Supports direct sigma mode for diffviews compatibility.
+Supports both diffusion (iterative denoising) and autoregressive (token-by-token)
+generation modes. Ported from diffviews.core.generator for model-agnostic generation.
 """
 
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -14,13 +15,22 @@ from .base import GeneratorAdapter
 
 
 class GenerationResult(NamedTuple):
-    """Result of generate() call."""
+    """Result of diffusion generate() call."""
     images: torch.Tensor  # (B, H, W, 3) uint8
     labels: torch.Tensor  # (B,) class labels
     trajectory: Optional[List[np.ndarray]] = None  # activations per step
     intermediates: Optional[List[torch.Tensor]] = None  # images per step
     timesteps: Optional[List[float]] = None  # native timesteps
     noised_inputs: Optional[List[torch.Tensor]] = None  # noised latents per step
+
+
+@dataclass
+class TextGenerationResult:
+    """Result from autoregressive text generation."""
+    tokens: torch.Tensor  # (B, seq_len) token IDs
+    text: List[str]  # Decoded strings
+    trajectory: Optional[List[np.ndarray]] = None  # Per-token activations
+    token_probs: Optional[torch.Tensor] = None  # Per-token probabilities
 
 
 class ActivationExtractor:
@@ -76,6 +86,33 @@ class ActivationExtractor:
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.remove_hooks()
+
+
+def _flatten_activations(
+    acts: Dict[str, torch.Tensor],
+    layer_names: List[str]
+) -> Optional[np.ndarray]:
+    """
+    Flatten activations dict to single array for trajectory storage.
+
+    Args:
+        acts: Dict mapping layer_name -> activation tensor
+        layer_names: Ordered list of layer names to include
+
+    Returns:
+        Concatenated flattened array (B, total_features) or None if empty
+    """
+    layer_acts = []
+    for layer_name in sorted(layer_names):
+        act = acts.get(layer_name)
+        if act is not None:
+            if len(act.shape) >= 3:
+                # Flatten spatial/sequence dims: (B, ...) -> (B, -1)
+                act = act.reshape(act.shape[0], -1)
+            layer_acts.append(act.numpy())
+    if layer_acts:
+        return np.concatenate(layer_acts, axis=1)
+    return None
 
 
 def tensor_to_uint8_image(tensor: torch.Tensor) -> torch.Tensor:
@@ -165,16 +202,25 @@ def generate(
     return_noised_inputs: bool = False,
     # Schedule params
     rho: float = 7.0,
+    # Autoregressive params
+    temperature: float = 1.0,
+    top_p: float = 0.95,
     **schedule_kwargs
-) -> GenerationResult:
+) -> Union[GenerationResult, TextGenerationResult]:
     """
-    Generate images using multi-step denoising with optional trajectory extraction.
+    Generate samples using adapter. Branches on adapter.generation_mode.
+
+    For diffusion models (generation_mode='diffusion'):
+        Iterative denoising from noise to clean image.
+
+    For autoregressive models (generation_mode='autoregressive'):
+        Token-by-token text generation.
 
     Args:
         adapter: GeneratorAdapter instance
         class_label: Class label (0-999), random if None, -1 for uniform
         caption: Text caption for T2I models (overrides class_label)
-        num_steps: Number of denoising steps
+        num_steps: Number of denoising steps (diffusion) or max new tokens (autoregressive)
         noise_level_max: Absolute max noise level (0-100), default 100
         noise_level_min: Absolute min noise level (0-100), default 0
         target_noise_max: Target starting noise level (defaults to noise_level_max)
@@ -192,11 +238,28 @@ def generate(
         return_intermediates: Return intermediate images
         return_noised_inputs: Return noised latents at each step
         rho: Karras schedule parameter (for EDM-style models)
+        temperature: Sampling temperature (autoregressive only)
+        top_p: Nucleus sampling threshold (autoregressive only)
         **schedule_kwargs: Additional schedule params
 
     Returns:
-        GenerationResult with images, labels, and optional trajectory/intermediates/noised_inputs
+        GenerationResult (diffusion) or TextGenerationResult (autoregressive)
     """
+    # Branch on generation mode
+    if adapter.generation_mode == 'autoregressive':
+        return _generate_autoregressive(
+            adapter=adapter,
+            num_steps=num_steps,
+            seed=seed,
+            extract_layers=extract_layers,
+            return_trajectory=return_trajectory,
+            temperature=temperature,
+            top_p=top_p,
+            device=device,
+            **schedule_kwargs
+        )
+
+    # Diffusion generation follows
     if seed is not None:
         torch.manual_seed(seed)
         torch.use_deterministic_algorithms(True, warn_only=True)
@@ -243,7 +306,11 @@ def generate(
     # Generate initial noise
     if initial_sigma is not None:
         # Direct sigma mode: generate noise * sigma_max (matches diffviews exactly)
-        x = torch.randn(num_samples, adapter.in_channels, adapter.resolution, adapter.resolution, device=device)
+        x = torch.randn(
+            num_samples, adapter.in_channels,
+            adapter.resolution, adapter.resolution,
+            device=device
+        )
         x = x * initial_sigma
     else:
         x = adapter.get_initial_noise(
@@ -267,17 +334,9 @@ def generate(
         # Extract trajectory activations
         if extractor is not None:
             acts = extractor.get_activations()
-            layer_acts = []
-            for layer_name in sorted(extract_layers):
-                act = acts.get(layer_name)
-                if act is not None:
-                    if len(act.shape) == 4:
-                        B, C, H, W = act.shape
-                        act = act.reshape(B, -1)
-                    layer_acts.append(act.numpy())
-            if layer_acts:
-                concat_act = np.concatenate(layer_acts, axis=1)
-                trajectory_activations.append(concat_act)
+            flat = _flatten_activations(acts, extract_layers)
+            if flat is not None:
+                trajectory_activations.append(flat)
             extractor.clear()
 
         # Capture intermediate image
@@ -312,4 +371,84 @@ def generate(
         intermediates=intermediate_images if return_intermediates else None,
         timesteps=timesteps.cpu().tolist(),
         noised_inputs=noised_input_images if return_noised_inputs else None
+    )
+
+
+@torch.no_grad()
+def _generate_autoregressive(
+    adapter: GeneratorAdapter,
+    num_steps: int = 256,
+    seed: Optional[int] = None,
+    extract_layers: Optional[List[str]] = None,
+    return_trajectory: bool = False,
+    temperature: float = 1.0,
+    top_p: float = 0.95,
+    device: str = 'cuda',
+    **kwargs
+) -> TextGenerationResult:
+    """
+    Token-by-token generation with optional activation extraction.
+
+    Args:
+        adapter: GeneratorAdapter with generation_mode='autoregressive'
+        num_steps: Max new tokens to generate
+        seed: Random seed
+        extract_layers: Layers to extract for trajectory
+        return_trajectory: Return activations at each step
+        temperature: Sampling temperature
+        top_p: Nucleus sampling threshold
+        device: Target device
+        **kwargs: Passed to adapter.forward()
+
+    Returns:
+        TextGenerationResult with tokens, text, and optional trajectory
+    """
+    if seed is not None:
+        torch.manual_seed(seed)
+
+    # Get initial sequence (tokenized prompt)
+    x = adapter.get_initial_noise(1, device)
+
+    # Get generation steps (token positions)
+    timesteps = adapter.get_timesteps(num_steps, device)
+
+    # Setup hooks for trajectory extraction
+    trajectory = []
+    extractor = None
+    if return_trajectory and extract_layers:
+        extractor = ActivationExtractor(adapter, extract_layers)
+        extractor.register_hooks()
+
+    try:
+        for t in timesteps:
+            # Forward pass - get logits for next token
+            logits = adapter.forward(x, t, **kwargs)
+
+            # Capture activations
+            if extractor is not None:
+                acts = extractor.get_activations()
+                flat = _flatten_activations(acts, extract_layers)
+                if flat is not None:
+                    trajectory.append(flat)
+                extractor.clear()
+
+            # Sample next token and extend sequence
+            x = adapter.step(x, t, logits, temperature=temperature, top_p=top_p)
+
+            # Check for EOS
+            if hasattr(adapter, 'tokenizer'):
+                eos_id = adapter.tokenizer.eos_token_id
+                if eos_id is not None and x[0, -1].item() == eos_id:
+                    break
+    finally:
+        if extractor is not None:
+            extractor.remove_hooks()
+
+    # Decode tokens to text
+    text = adapter.tokenizer.batch_decode(x, skip_special_tokens=True)
+
+    return TextGenerationResult(
+        tokens=x,
+        text=text,
+        trajectory=trajectory if return_trajectory else None
     )
