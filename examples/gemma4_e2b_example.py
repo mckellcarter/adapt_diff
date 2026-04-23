@@ -33,8 +33,8 @@ def main():
         help='Device (cuda, mps, cpu). Auto-detected if not specified'
     )
     parser.add_argument(
-        '--backend', default='auto',
-        help='Backend (torch, mlx, auto)'
+        '--backend', default='torch',
+        help='Backend (torch, mlx). Note: MLX support for Gemma is limited'
     )
     parser.add_argument(
         '--prompt', default='Explain quantum computing in one sentence:',

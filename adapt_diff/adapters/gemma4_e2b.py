@@ -428,10 +428,24 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
     @classmethod
     def _load_mlx(cls, path: str, **kwargs) -> 'Gemma4E2BAdapter':
         """Load model with MLX backend."""
-        from mlx_lm import load
+        try:
+            from mlx_lm import load
+        except ImportError as e:
+            raise ImportError(
+                "MLX backend requires: pip install mlx>=0.15.0 mlx-lm>=0.15.0"
+            ) from e
 
         print(f"Loading Gemma 4 E2B (MLX) from {path}...")
-        model, tokenizer = load(path)
+        try:
+            model, tokenizer = load(path)
+        except ModuleNotFoundError as e:
+            if 'gemma' in str(e).lower():
+                raise NotImplementedError(
+                    f"MLX doesn't support this model architecture yet. "
+                    f"Use backend='torch' instead: "
+                    f"Gemma4E2BAdapter.from_checkpoint('{path}', device='mps', backend='torch')"
+                ) from e
+            raise
 
         return cls(model, tokenizer, 'mps', 'mlx')
 
