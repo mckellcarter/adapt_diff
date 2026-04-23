@@ -82,8 +82,7 @@ def main():
         device=device,
         backend=backend,
         load_vision=False,  # Text-only for this example
-        load_audio=False,
-        embedding_model=None  # Skip EmbeddingGemma
+        load_audio=False
     )
     print(f"Loaded: {adapter}")
 
@@ -129,10 +128,9 @@ def example_with_trajectory():
     adapter = Gemma4E2BAdapter.from_checkpoint(
         'google/gemma-2-2b-it',
         device=device,
-        backend='auto',
+        backend='torch',
         load_vision=False,
-        load_audio=False,
-        embedding_model=None
+        load_audio=False
     )
 
     adapter.prepare_conditioning(text="The meaning of life is")
@@ -163,10 +161,9 @@ def example_batch_generation():
     adapter = Gemma4E2BAdapter.from_checkpoint(
         'google/gemma-2-2b-it',
         device=device,
-        backend='auto',
+        backend='torch',
         load_vision=False,
-        load_audio=False,
-        embedding_model=None
+        load_audio=False
     )
 
     prompts = [

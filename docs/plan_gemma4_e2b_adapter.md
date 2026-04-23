@@ -572,9 +572,9 @@ def supports_mlx() -> bool:
    - `forward()` → predict next token logits
    - `get_initial_noise()` → tokenized prompt
 
-3. **Embedders bundled** - Vision (ViT 150M), audio (Conformer), text (EmbeddingGemma 308M) loaded inside adapter via `from_checkpoint()`, consistent with MSCOCO pattern.
+3. **Optional encoders** - Vision (ViT) and audio (Conformer) encoders loaded from model if available. EmbeddingGemma removed as unnecessary for generation.
 
-4. **MLX for LLM only** - Vision/audio encoders stay on torch (works on MPS). MLX backend only for main Gemma model.
+4. **MLX for LLM only** - Vision/audio encoders stay on torch (works on MPS). MLX backend only for main Gemma model (pending mlx-lm support).
 
 5. **Inline activation hooks** - Capture activations during generation loop, single pass.
 

@@ -36,8 +36,7 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         device: str = 'cuda',
         backend: str = 'torch',
         vision_encoder=None,
-        audio_encoder=None,
-        text_embedder=None
+        audio_encoder=None
     ):
         HookMixin.__init__(self)
         self._model = model
@@ -46,7 +45,6 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         self._backend = backend
         self._vision_encoder = vision_encoder
         self._audio_encoder = audio_encoder
-        self._text_embedder = text_embedder
         self._current_prompt = None
         self._temperature = 1.0
         self._top_p = 1.0
@@ -310,21 +308,6 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
 
         return cond
 
-    def get_text_embedding(self, text: str, dim: int = 768) -> torch.Tensor:
-        """
-        Get text embedding via EmbeddingGemma.
-
-        Args:
-            text: Input text
-            dim: Output dimension (128, 256, 384, 512, or 768)
-
-        Returns:
-            Embedding tensor (1, dim)
-        """
-        if self._text_embedder is None:
-            raise ValueError("EmbeddingGemma not loaded")
-        return self._text_embedder.encode(text, output_dim=dim)
-
     # === Hooks ===
 
     def _get_layer_module(self, layer_name: str):
@@ -378,19 +361,17 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         backend: str = 'auto',
         load_vision: bool = True,
         load_audio: bool = True,
-        embedding_model: str = 'google/embeddinggemma-300m',
         **kwargs
     ) -> 'Gemma4E2BAdapter':
         """
-        Load Gemma 4 E2B with optional embedders.
+        Load Gemma 4 E2B with optional encoders.
 
         Args:
             checkpoint_path: HF repo ID or local path
             device: 'cuda', 'mps', 'cpu'
             backend: 'torch', 'mlx', or 'auto' (MLX on mps)
-            load_vision: Load ViT vision encoder
-            load_audio: Load Conformer audio encoder
-            embedding_model: EmbeddingGemma model ID (None to skip)
+            load_vision: Load ViT vision encoder if available
+            load_audio: Load Conformer audio encoder if available
         """
         if backend == 'auto':
             backend = 'mlx' if device == 'mps' else 'torch'
@@ -398,8 +379,7 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         if backend == 'mlx':
             return cls._load_mlx(checkpoint_path, **kwargs)
         return cls._load_torch(
-            checkpoint_path, device, load_vision, load_audio,
-            embedding_model, **kwargs
+            checkpoint_path, device, load_vision, load_audio, **kwargs
         )
 
     @classmethod
@@ -409,7 +389,6 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         device: str,
         load_vision: bool,
         load_audio: bool,
-        embed_model: Optional[str],
         **kwargs
     ) -> 'Gemma4E2BAdapter':
         """Load model with torch backend."""
@@ -430,12 +409,8 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         if load_audio:
             audio_encoder = cls._load_audio_encoder(model, device)
 
-        text_embedder = None
-        if embed_model:
-            text_embedder = cls._load_embedding_gemma(embed_model, device)
-
         return cls(model, tokenizer, device, 'torch',
-                   vision_encoder, audio_encoder, text_embedder)
+                   vision_encoder, audio_encoder)
 
     @classmethod
     def _load_mlx(cls, path: str, **kwargs) -> 'Gemma4E2BAdapter':
@@ -476,36 +451,6 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         if hasattr(model, 'audio_tower'):
             return model.audio_tower
         return None
-
-    @classmethod
-    def _load_embedding_gemma(cls, model_id: str, device: str):
-        """Load EmbeddingGemma for text embeddings."""
-        from transformers import AutoModel, AutoTokenizer
-
-        print(f"Loading EmbeddingGemma from {model_id}...")
-
-        class EmbeddingWrapper:
-            """Wrapper for EmbeddingGemma model with MRL truncation."""
-
-            def __init__(self, emb_model, emb_tokenizer, emb_device):
-                self.model = emb_model.to(emb_device)
-                self.tokenizer = emb_tokenizer
-                self.device = emb_device
-                self.model.eval()
-
-            def encode(self, text: str, output_dim: int = 768) -> torch.Tensor:
-                """Encode text to embedding with specified output dimension."""
-                tokens = self.tokenizer(
-                    text, return_tensors='pt', truncation=True, max_length=2048
-                ).to(self.device)
-                with torch.no_grad():
-                    out = self.model(**tokens)
-                    emb = out.last_hidden_state.mean(dim=1)
-                return emb[:, :output_dim]  # MRL truncation
-
-        emb_model = AutoModel.from_pretrained(model_id)
-        emb_tokenizer = AutoTokenizer.from_pretrained(model_id)
-        return EmbeddingWrapper(emb_model, emb_tokenizer, device)
 
     @classmethod
     def get_default_config(cls) -> Dict[str, Any]:
