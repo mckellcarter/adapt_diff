@@ -28,19 +28,22 @@ adapt_diff/
 │   ├── hooks.py              # HookMixin utilities
 │   ├── registry.py           # Registration + entry-point discovery
 │   ├── generation.py         # High-level generate() API
+│   ├── device.py             # Device/backend utilities
 │   ├── adapters/
-│   │   ├── abu_custom_sd.py    # AbU Custom SD 512x512
+│   │   ├── abu_custom_sd.py  # AbU Custom SD 512x512
 │   │   ├── dmd2_imagenet.py  # DMD2 ImageNet 64x64
 │   │   ├── edm_imagenet.py   # EDM ImageNet 64x64
+│   │   ├── gemma4_e2b.py     # Gemma 4 E2B (autoregressive LLM)
 │   │   └── mscoco_t2i.py     # MSCOCO T2I 128x128
 │   ├── scripts/
 │   │   ├── cli.py            # CLI (download, list)
 │   │   └── downloaders.py    # Model-specific download functions
 │   └── vendor/               # Licenses and attributions
 │       └── LICENSE
+├── examples/
+│   └── gemma4_e2b_example.py # Text generation example
 └── tests/
     ├── adapters/             # Adapter-specific tests
-    │   └── test_mscoco_t2i.py
     ├── test_hooks.py
     └── test_registry.py
 ```
@@ -196,6 +199,48 @@ adapter.in_channels          # 3 (RGB) or 4 (SD latent)
 adapter.conditioning_type    # 'text', 'class', or 'unconditional'
 adapter.latent_scale_factor  # 8 for SD (512→64), 1 for pixel models
 ```
+
+## Text Generation (Autoregressive)
+
+The `generate()` function automatically detects `generation_mode` and branches accordingly:
+
+```python
+from adapt_diff.adapters.gemma4_e2b import Gemma4E2BAdapter
+from adapt_diff.generation import generate
+
+# Load from HuggingFace or local path
+adapter = Gemma4E2BAdapter.from_checkpoint(
+    'google/gemma-2-2b-it',  # or local path
+    device='cuda',           # or 'mps' for Mac
+    backend='torch',
+)
+
+# Prepare prompt (chat template applied automatically for instruction-tuned models)
+adapter.prepare_conditioning(text="Explain quantum computing in one sentence.")
+
+# Generate text
+result = generate(
+    adapter,
+    num_steps=64,        # max new tokens
+    temperature=0.7,
+    top_p=0.95,
+    device='cuda',
+)
+
+print(result.text[0])  # Generated response
+
+# With activation extraction
+result = generate(
+    adapter,
+    num_steps=64,
+    extract_layers=['layer_17', 'layer_17_attn'],
+    return_trajectory=True,
+    device='cuda',
+)
+# result.trajectory contains activations at each token position
+```
+
+See `examples/gemma4_e2b_example.py` for full usage.
 
 ## Creating a Custom Adapter
 
@@ -362,12 +407,20 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
 
 ## Supported Models
 
+### Diffusion Models
+
 | Model | Adapter Name | Resolution | Conditioning | CFG | Description |
 |-------|--------------|------------|--------------|-----|-------------|
 | AbU Custom SD | `abu-custom-sd14` | 512x512 | text | ✓ | AttributeByUnlearning SD v1.4 |
 | DMD2 | `dmd2-imagenet-64` | 64x64 | class | ✓ | Distribution Matching Distillation (1-10 steps) |
 | EDM | `edm-imagenet-64` | 64x64 | class | ✓ | Elucidating Diffusion Models (50-256 steps) |
 | MSCOCO T2I | `mscoco-t2i-128` | 128x128 | text | ✓ | Text-to-image diffusion (latent space) |
+
+### Autoregressive Models
+
+| Model | Adapter Name | Context | Modalities | Description |
+|-------|--------------|---------|------------|-------------|
+| Gemma 4 E2B | `gemma4-e2b` | 128K | text, image, audio | Google Gemma 2B multimodal LLM |
 
 ## Checkpoints
 
