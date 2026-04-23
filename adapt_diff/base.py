@@ -123,6 +123,26 @@ class GeneratorAdapter(ABC):
         pass
 
     @property
+    def output_type(self) -> str:
+        """
+        Output modality of the model.
+
+        Returns:
+            'image' (default) for diffusion models, 'text' for autoregressive LLMs
+        """
+        return 'image'
+
+    @property
+    def generation_mode(self) -> str:
+        """
+        Generation paradigm used by the model.
+
+        Returns:
+            'diffusion' (default) for iterative denoising, 'autoregressive' for token-by-token
+        """
+        return 'diffusion'
+
+    @property
     def training_data_id(self) -> Optional[str]:
         """
         Identifier for training dataset, used by yodal-train-items.
