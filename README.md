@@ -29,6 +29,7 @@ adapt_diff/
 │   ├── registry.py           # Registration + entry-point discovery
 │   ├── generation.py         # High-level generate() API
 │   ├── device.py             # Device/backend utilities
+│   ├── extraction.py         # ActivationExtractor + utilities
 │   ├── adapters/
 │   │   ├── abu_custom_sd.py  # AbU Custom SD 512x512
 │   │   ├── dmd2_imagenet.py  # DMD2 ImageNet 64x64
@@ -80,14 +81,28 @@ result = generate(
 activations = result.trajectory  # list of (B, D) arrays per step
 intermediates = result.intermediates  # list of images per step
 
-# Direct sigma mode (for diffviews compatibility)
-# Bypasses noise_level conversion, computes Karras schedule directly
+# With activation masking (constrain generation)
+from adapt_diff import ActivationMasker
+
+masker = ActivationMasker(adapter)
+masker.set_mask('encoder_bottleneck', target_activation)
+
 result = generate(
     adapter=adapter,
     class_label=281,
     num_steps=10,
-    sigma_max=80.0,   # Direct sigma values
-    sigma_min=0.5,    # Must match training extraction sigma
+    activation_masker=masker,  # Apply masking during generation
+    mask_steps=3,              # Remove hooks after 3 steps (default: all)
+    noise_mode="fixed",        # "stochastic", "fixed", or "zero"
+)
+
+# With noise_level control (0-100 scale, model-agnostic)
+result = generate(
+    adapter=adapter,
+    class_label=281,
+    num_steps=10,
+    noise_level_max=100.0,  # 100 = pure noise (default)
+    noise_level_min=0.5,    # 0.5 = mostly clean
     extract_layers=['encoder_bottleneck'],
     return_trajectory=True,
 )
@@ -115,17 +130,109 @@ print(shapes)  # {'encoder_bottleneck': (512, 8, 8), ...}
 
 ## Activation Extraction
 
+Use `ActivationExtractor` for hook-based activation capture:
+
 ```python
-# Register hooks for activation extraction
+from adapt_diff import get_adapter, ActivationExtractor
+
+adapter = get_adapter('dmd2-imagenet-64').from_checkpoint('dmd2.pkl', device='cuda')
+
+# Context manager handles hook registration/cleanup
+with ActivationExtractor(adapter, ['encoder_bottleneck']) as extractor:
+    adapter.forward(x_noisy, sigma, class_labels)
+    activations = extractor.get_activations()  # Dict[str, Tensor]
+
+# Or manual lifecycle
+extractor = ActivationExtractor(adapter, ['encoder_bottleneck', 'decoder'])
+extractor.register_hooks()
+adapter.forward(x_noisy, sigma, class_labels)
+activations = extractor.get_activations()
+extractor.clear()  # Clear for next batch
+# ... more forward passes ...
+extractor.remove_hooks()
+```
+
+### Extraction Utilities
+
+Save, load, and convert activation files:
+
+```python
+from adapt_diff import (
+    flatten_activations,
+    save_activations,
+    load_activations,
+    convert_to_fast_format,
+    load_fast_activations,
+)
+
+# Flatten multi-layer activations to single vector
+# Dict[str, (B, D_i)] -> (B, sum(D_i))
+flat = flatten_activations(activations)
+
+# Save to .npz with metadata
+save_activations(activations, 'output/acts', metadata={'sigma': 0.5})
+
+# Load back
+activations, metadata = load_activations('output/acts')
+
+# Convert to fast .npy format (~30x faster loading)
+convert_to_fast_format('output/acts.npz', 'output/acts_fast.npy')
+
+# Memory-mapped loading for large datasets
+acts = load_fast_activations('output/acts_fast.npy', mmap_mode='r')
+```
+
+### Activation Masking
+
+Use `ActivationMasker` to replace layer outputs with fixed values during forward pass:
+
+```python
+from adapt_diff import get_adapter, ActivationMasker
+
+adapter = get_adapter('dmd2-imagenet-64').from_checkpoint('dmd2.pkl', device='cuda')
+
+# Context manager handles hook registration/cleanup
+masker = ActivationMasker(adapter)
+masker.set_mask('encoder_bottleneck', target_activation)  # (1, C, H, W) tensor
+
+with masker:
+    # All forward passes will use the fixed activation for this layer
+    output = adapter.forward(x_noisy, sigma, class_labels)
+
+# Or manual lifecycle
+masker.register_hooks(['encoder_bottleneck'])
+output = adapter.forward(x_noisy, sigma, class_labels)
+masker.remove_hooks()
+
+# Batch expansion: single mask automatically expands to batch size
+masker.set_mask('layer', torch.randn(1, 512, 8, 8))  # mask shape
+adapter.forward(torch.randn(4, 3, 64, 64), sigma, labels)  # batch of 4 → mask expanded
+```
+
+### Masking Utilities
+
+```python
+from adapt_diff import unflatten_activation, load_activation_from_npz
+
+# Reshape flattened activation back to spatial format
+# (1, C*H*W) → (1, C, H, W)
+spatial = unflatten_activation(flat_tensor, target_shape=(512, 8, 8))
+
+# Load single layer from NPZ file
+activation = load_activation_from_npz('activations.npz', 'encoder_bottleneck')
+```
+
+### Low-level Hook API
+
+For custom hook logic:
+
+```python
+# Manual hook registration
 def extraction_hook(module, input, output):
     activations[name] = output.detach().cpu()
 
 handles = adapter.register_activation_hooks(['encoder_bottleneck'], extraction_hook)
-
-# Run forward pass
 output = adapter.forward(x, sigma, class_labels)
-
-# Clean up
 for h in handles:
     h.remove()
 ```
@@ -185,8 +292,6 @@ Each adapter provides sensible defaults via `get_default_config()`. Noise levels
 **Note on noise_level scale**: The 0-100 noise_level maps to native sigma via log interpolation. For attribution at a specific sigma (e.g., σ=0.5), use `adapter.native_to_noise_level(sigma)` to get the corresponding noise_level (~52.1 for DMD2).
 
 **Note on num_steps for attribution**: When extracting activations for attribution, `num_steps` must match the number of steps used to build the training index. The activation at a given sigma depends on the entire denoising trajectory, not just the final sigma value. For DMD2 with yodal training data, use `num_steps=10`.
-
-**Direct sigma mode**: For exact control over the sigma schedule (e.g., to match diffviews), use `sigma_max` and `sigma_min` parameters instead of `noise_level_max/min`. This bypasses noise_level conversion and computes the Karras schedule directly from sigma values.
 
 ### Adapter Properties
 

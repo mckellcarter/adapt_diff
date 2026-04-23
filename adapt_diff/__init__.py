@@ -11,6 +11,17 @@ from .registry import (
     unregister_adapter,
 )
 from .generation import generate, GenerationResult, ActivationExtractor
+from .extraction import (
+    flatten_activations,
+    load_activations,
+    save_activations,
+    convert_to_fast_format,
+    load_fast_activations,
+    get_fast_format_info,
+    ActivationMasker,
+    unflatten_activation,
+    load_activation_from_npz,
+)
 from .device import get_device, get_device_info, clear_cache
 
 # Import adapters to register them
@@ -30,11 +41,22 @@ __all__ = [
     # Generation
     "generate",
     "GenerationResult",
+    # Extraction
     "ActivationExtractor",
+    "flatten_activations",
+    "load_activations",
+    "save_activations",
+    "convert_to_fast_format",
+    "load_fast_activations",
+    "get_fast_format_info",
+    # Masking
+    "ActivationMasker",
+    "unflatten_activation",
+    "load_activation_from_npz",
     # Device
     "get_device",
     "get_device_info",
     "clear_cache",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

@@ -339,6 +339,8 @@ class GeneratorAdapter(ABC):
         x_t: torch.Tensor,
         t: torch.Tensor,
         model_output: torch.Tensor,
+        t_next: Optional[torch.Tensor] = None,
+        step_noise: Optional[torch.Tensor] = None,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -350,7 +352,9 @@ class GeneratorAdapter(ABC):
             x_t: Current noisy sample (B, C, H, W)
             t: Current native timestep/sigma (B,) or scalar (from get_timesteps())
             model_output: Raw model output (B, C, H, W)
-            **kwargs: Scheduler-specific options (e.g., eta, generator, t_next)
+            t_next: Next timestep/sigma value (required for some samplers)
+            step_noise: Pre-generated noise for stochastic samplers (None=fresh noise)
+            **kwargs: Scheduler-specific options (e.g., eta, generator)
 
         Returns:
             x_{t-1}: Less noisy sample (B, C, H, W)

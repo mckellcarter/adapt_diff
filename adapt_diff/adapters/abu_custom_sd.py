@@ -252,6 +252,8 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         x_t: torch.Tensor,
         t: torch.Tensor,
         model_output: torch.Tensor,
+        t_next: Optional[torch.Tensor] = None,
+        step_noise: Optional[torch.Tensor] = None,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -261,11 +263,14 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
             x_t: Current noisy latent (B, 4, 64, 64)
             t: Current timestep (scalar or (B,))
             model_output: Predicted noise from forward() (B, 4, 64, 64)
+            t_next: Unused (scheduler handles timestep progression)
+            step_noise: Unused (scheduler handles noise internally)
             **kwargs: Passed to scheduler.step() (e.g., generator, eta)
 
         Returns:
             x_{t-1}: Less noisy latent
         """
+        # t_next and step_noise ignored - scheduler handles internally
         return self._scheduler.step(model_output, t, x_t, **kwargs).prev_sample
 
     def get_initial_noise(
