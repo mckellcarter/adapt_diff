@@ -27,7 +27,9 @@ Autoregressive generation maps cleanly to `GeneratorAdapter` by treating token p
 
 ## Implementation Steps
 
-### 1. Extend Base Class (`base.py`)
+### 1. Extend Base Class (`base.py`) ✅ DONE
+
+> Committed in `c1e8d2f` on `feature/gemma4-e2b-adapter`
 
 Add optional properties with defaults (existing adapters unchanged):
 
@@ -43,7 +45,9 @@ def generation_mode(self) -> str:
     return 'diffusion'
 ```
 
-### 2. Create Gemma 4 E2B Adapter (`adapters/gemma4_e2b.py`)
+### 2. Create Gemma 4 E2B Adapter (`adapters/gemma4_e2b.py`) ✅ DONE
+
+> Committed in `c1e8d2f` on `feature/gemma4-e2b-adapter`
 
 ```python
 @register_adapter('gemma4-e2b')
@@ -608,8 +612,19 @@ mlx = ["mlx>=0.15.0", "mlx-lm>=0.15.0"]
 
 ---
 
+## Progress
+
+- [x] Phase 1: Extend `base.py` with `output_type`/`generation_mode` properties
+- [x] Phase 1: Create `adapters/gemma4_e2b.py` adapter
+- [ ] Phase 2: Extend `generation.py` with autoregressive branch + `TextGenerationResult`
+- [ ] Phase 2: Extend `device.py` with `get_backend()` and `supports_mlx()`
+- [ ] Phase 3: Add unit tests for Gemma4E2BAdapter
+- [ ] Phase 3: Verify existing diffusion tests still pass
+
+---
+
 ## Continuation Prompt
 
 ```
-Implement the Gemma 4 E2B adapter per docs/plan_gemma4_e2b_adapter.md. Start with Phase 1: extend base.py with output_type and generation_mode properties (with backward-compatible defaults), then create adapters/gemma4_e2b.py.
+Continue Gemma 4 E2B adapter implementation per docs/plan_gemma4_e2b_adapter.md. Phase 1 complete. Now implement Phase 2: extend generation.py with TextGenerationResult dataclass and _generate_autoregressive() function that branches on adapter.generation_mode. Also add get_backend() and supports_mlx() to device.py.
 ```
