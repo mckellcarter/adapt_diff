@@ -74,6 +74,9 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
     @property
     def num_classes(self) -> int:
         """Vocab size - analogous to num_classes."""
+        # Gemma 2 uses 256k vocab, actual size may vary by model
+        if hasattr(self, '_tokenizer') and hasattr(self._tokenizer, 'vocab_size'):
+            return self._tokenizer.vocab_size
         return 256000
 
     @property
@@ -260,6 +263,7 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         device: str = 'cuda',
         images: Optional[List] = None,
         audio: Optional[torch.Tensor] = None,
+        apply_chat_template: bool = True,
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -272,6 +276,7 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
             device: Target device
             images: List of image tensors
             audio: Audio waveform tensor
+            apply_chat_template: Apply tokenizer's chat template (default True)
 
         Returns:
             Dict with image_embeds, audio_embeds if provided
@@ -282,7 +287,14 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         if text is None:
             raise ValueError("Text prompt required")
 
-        self._current_prompt = text
+        # Apply chat template if available and requested
+        if apply_chat_template and hasattr(self._tokenizer, 'apply_chat_template'):
+            messages = [{"role": "user", "content": text}]
+            self._current_prompt = self._tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+        else:
+            self._current_prompt = text
         cond = {}
 
         # Encode images if provided
