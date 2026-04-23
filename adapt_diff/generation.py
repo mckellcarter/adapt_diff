@@ -5,7 +5,8 @@ Supports both diffusion (iterative denoising) and autoregressive (token-by-token
 generation modes. Ported from diffviews.core.generator for model-agnostic generation.
 """
 
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Tuple
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -316,7 +317,7 @@ def generate(
         extractor = ActivationExtractor(adapter, extract_layers)
         extractor.register_hooks()
 
-f    # Generate initial noise using adapter's model-agnostic interface
+    # Generate initial noise using adapter's model-agnostic interface
     x = adapter.get_initial_noise(
         batch_size=num_samples,
         device=device,
