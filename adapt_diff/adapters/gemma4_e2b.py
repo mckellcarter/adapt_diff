@@ -417,7 +417,7 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
 
         print(f"Loading Gemma 4 E2B (torch) from {path}...")
         model = AutoModelForCausalLM.from_pretrained(
-            path, torch_dtype=torch.bfloat16, device_map=device
+            path, dtype=torch.bfloat16, device_map=device
         )
         tokenizer = AutoTokenizer.from_pretrained(path)
         model.eval()

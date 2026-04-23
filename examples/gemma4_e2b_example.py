@@ -108,7 +108,11 @@ def main():
     print("\n" + "=" * 60)
     print("Generated text:")
     print("=" * 60)
-    print(result.text[0])
+    output = result.text[0]
+    # Strip prompt/template prefix if present
+    if 'model\n' in output:
+        output = output.split('model\n', 1)[-1].strip()
+    print(output)
     print("=" * 60)
 
     print(f"\nTokens generated: {result.tokens.shape[1]}")
