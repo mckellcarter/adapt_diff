@@ -3,18 +3,18 @@
 Example: Gemma 4 E2B text generation with activation extraction.
 
 Prerequisites:
-    pip install transformers>=4.40.0 sentencepiece accelerate
+    pip install transformers>=5.5.0 sentencepiece accelerate
     huggingface-cli login  # Gemma requires agreement to terms (for HF download)
 
 For Apple Silicon with MLX:
     pip install mlx>=0.15.0 mlx-lm>=0.15.0
 
 Usage:
-    # From HuggingFace
+    # From HuggingFace (default)
     python examples/gemma4_e2b_example.py
 
-    # From local path (download first with: huggingface-cli download google/gemma-2-2b-it)
-    python examples/gemma4_e2b_example.py --model /path/to/gemma-2-2b-it
+    # From local path
+    python examples/gemma4_e2b_example.py --model /path/to/gemma-4-E2B-it
 
     # Apple Silicon
     python examples/gemma4_e2b_example.py --device mps --backend torch
@@ -33,8 +33,8 @@ from adapt_diff.device import get_device, get_backend
 def main():
     parser = argparse.ArgumentParser(description='Gemma 4 E2B generation example')
     parser.add_argument(
-        '--model', default='google/gemma-2-2b-it',
-        help='HuggingFace model ID or local path to downloaded model'
+        '--model', default='google/gemma-4-E2B-it',
+        help='HuggingFace model ID or local path (default: google/gemma-4-E2B-it)'
     )
     parser.add_argument(
         '--device', default=None,
@@ -126,7 +126,7 @@ def example_with_trajectory():
     device = get_device()
 
     adapter = Gemma4E2BAdapter.from_checkpoint(
-        'google/gemma-2-2b-it',
+        'google/gemma-4-E2B-it',
         device=device,
         backend='torch',
         load_vision=False,
@@ -159,7 +159,7 @@ def example_batch_generation():
     device = get_device()
 
     adapter = Gemma4E2BAdapter.from_checkpoint(
-        'google/gemma-2-2b-it',
+        'google/gemma-4-E2B-it',
         device=device,
         backend='torch',
         load_vision=False,
