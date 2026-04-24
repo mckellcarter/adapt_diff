@@ -1,11 +1,15 @@
 """Gemma 4 E2B adapter implementing the GeneratorAdapter interface.
 
-Gemma 4 E2B is a 2B parameter multimodal LLM supporting text, image, and audio input
-with text output. This adapter unifies autoregressive generation under the same
-abstraction as diffusion models by treating token position as timestep.
+Gemma 4 E2B is a multimodal LLM supporting text, image, and audio input with text
+output. Architecture: 35 layers, 1536 hidden dim, 262K vocab, 131K context.
+Uses hybrid sliding/full attention. This adapter unifies autoregressive generation
+under the same abstraction as diffusion models by treating token position as timestep.
+
+Requires: transformers>=5.5.0
 """
 
 from typing import Any, Dict, List, Optional, Tuple
+import warnings
 
 import torch
 
@@ -13,14 +17,20 @@ from adapt_diff.base import GeneratorAdapter
 from adapt_diff.hooks import HookMixin
 from adapt_diff.registry import register_adapter
 
+# Expected model types for Gemma 4 E2B
+_GEMMA4_MODEL_TYPES = {'gemma4', 'gemma4_text'}
+_GEMMA4_ARCHITECTURES = {'Gemma4ForConditionalGeneration', 'Gemma4ForCausalLM'}
+
 
 @register_adapter('gemma4-e2b')
 class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
     """
-    Adapter for Gemma 4 E2B (2B params, multimodal).
+    Adapter for Gemma 4 E2B (multimodal).
 
+    Architecture: 35 layers, 1536 hidden, 262K vocab, 131K context
+    Attention: hybrid sliding (512 window) + full attention
     Supports: text + image + audio input → text output
-    Backends: torch (cuda/cpu) or MLX (mps)
+    Backends: torch (cuda/cpu/mps)
 
     Token position as time:
         - get_timesteps() → token positions to generate
@@ -67,15 +77,15 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
     @property
     def resolution(self) -> int:
         """Context length (tokens) - analogous to image resolution."""
-        return 128000  # 128K context
+        return 131072  # 131K context (from config.json max_position_embeddings)
 
     @property
     def num_classes(self) -> int:
         """Vocab size - analogous to num_classes."""
-        # Gemma 2 uses 256k vocab, actual size may vary by model
+        # Gemma 4 uses 262K vocab; dynamically read from tokenizer if available
         if hasattr(self, '_tokenizer') and hasattr(self._tokenizer, 'vocab_size'):
             return self._tokenizer.vocab_size
-        return 256000
+        return 262144
 
     @property
     def prediction_type(self) -> str:
@@ -99,11 +109,30 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
 
     @property
     def hookable_layers(self) -> List[str]:
-        """Return list of available layer names for hooks."""
+        """Return list of available layer names for hooks.
+
+        Dynamically detects layers from the model structure.
+
+        NOTE: Currently only exposes language model layers. To hook vision/audio
+        encoder layers, add prefixes (e.g. 'vision_layer_0', 'audio_layer_0')
+        and update _get_layer_module() to route by prefix.
+        """
         layers = []
-        for i in range(35):  # 35 decoder layers
-            layers.extend([f'layer_{i}', f'layer_{i}_attn', f'layer_{i}_mlp'])
-        layers.append('final_norm')
+        lm = self._get_language_model()
+
+        if hasattr(lm, 'layers'):
+            num_layers = len(lm.layers)
+            for i in range(num_layers):
+                layer = lm.layers[i]
+                layers.append(f'layer_{i}')
+                if hasattr(layer, 'self_attn'):
+                    layers.append(f'layer_{i}_attn')
+                if hasattr(layer, 'mlp'):
+                    layers.append(f'layer_{i}_mlp')
+
+        if hasattr(lm, 'norm'):
+            layers.append('final_norm')
+
         return layers
 
     # === Core Interface ===
@@ -316,14 +345,28 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
 
     # === Hooks ===
 
+    def _get_language_model(self):
+        """Get the language model component.
+
+        Gemma 4 multimodal has layers at model.model.language_model.layers,
+        while text-only models have them at model.model.layers.
+        """
+        if hasattr(self._model, 'model'):
+            if hasattr(self._model.model, 'language_model'):
+                return self._model.model.language_model
+            return self._model.model
+        return self._model
+
     def _get_layer_module(self, layer_name: str):
         """Get PyTorch module by layer name."""
+        lm = self._get_language_model()
+
         if layer_name == 'final_norm':
-            return self._model.model.norm
+            return lm.norm
 
         parts = layer_name.split('_')
         idx = int(parts[1])
-        layer = self._model.model.layers[idx]
+        layer = lm.layers[idx]
 
         if len(parts) == 2:
             return layer
@@ -398,13 +441,18 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         **kwargs
     ) -> 'Gemma4E2BAdapter':
         """Load model with torch backend."""
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
         print(f"Loading Gemma 4 E2B (torch) from {path}...")
+
+        # Validate model type before loading weights
+        config = AutoConfig.from_pretrained(path, trust_remote_code=True)
+        cls._validate_model_type(config, path)
+
         model = AutoModelForCausalLM.from_pretrained(
-            path, dtype=torch.bfloat16, device_map=device
+            path, dtype=torch.bfloat16, device_map=device, trust_remote_code=True
         )
-        tokenizer = AutoTokenizer.from_pretrained(path)
+        tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
         model.eval()
 
         vision_encoder = None
@@ -459,14 +507,42 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         return None
 
     @classmethod
+    def _validate_model_type(cls, config, path: str) -> None:
+        """Validate that loaded model is actually Gemma 4.
+
+        Raises warning if model_type doesn't match expected Gemma 4 types.
+        This catches cases where e.g. Gemma 2 is loaded by mistake.
+        """
+        model_type = getattr(config, 'model_type', None)
+        architectures = getattr(config, 'architectures', []) or []
+
+        is_gemma4_type = model_type in _GEMMA4_MODEL_TYPES
+        is_gemma4_arch = any(a in _GEMMA4_ARCHITECTURES for a in architectures)
+
+        if not is_gemma4_type and not is_gemma4_arch:
+            warnings.warn(
+                f"Model at '{path}' has model_type='{model_type}' and "
+                f"architectures={architectures}, which doesn't match expected "
+                f"Gemma 4 types {_GEMMA4_MODEL_TYPES} or architectures "
+                f"{_GEMMA4_ARCHITECTURES}. This adapter is designed for Gemma 4 E2B. "
+                f"If you intended to load Gemma 2, use the appropriate adapter or "
+                f"specify google/gemma-4-E2B-it for Gemma 4.",
+                UserWarning,
+                stacklevel=4
+            )
+
+    @classmethod
     def get_default_config(cls) -> Dict[str, Any]:
         """Return default configuration for Gemma 4 E2B."""
         return {
             "model_type": "gemma4-e2b",
-            "context_length": 128000,
-            "vocab_size": 256000,
-            "hidden_dim": 2304,
+            "context_length": 131072,
+            "vocab_size": 262144,
+            "hidden_dim": 1536,
             "num_layers": 35,
+            "num_attention_heads": 8,
+            "num_key_value_heads": 1,
+            "sliding_window": 512,
             "input_modalities": ["text", "image", "audio"],
             "output_modality": "text",
             "generation_mode": "autoregressive",
