@@ -190,15 +190,21 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         self,
         num_steps: int,
         device: str = 'cuda',
-        noise_level_max: float = 100.0,
-        noise_level_min: float = 0.0,
+        target_noise_max: float = 100.0,
+        target_noise_min: float = 0.0,
         **kwargs
     ) -> torch.Tensor:
         """
         Return token positions to generate.
 
+        For autoregressive models, returns sequential token positions.
+        target_noise_max/min are accepted for API consistency but not used.
+
         Args:
             num_steps: Max new tokens to generate
+            target_noise_max: Ignored (for API consistency)
+            target_noise_min: Ignored (for API consistency)
+            **kwargs: Ignored
 
         Returns:
             Range tensor (0, 1, 2, ..., num_steps-1)

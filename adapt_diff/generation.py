@@ -184,10 +184,8 @@ def generate(
     class_label: Optional[int] = None,
     caption: Optional[str] = None,
     num_steps: int = 6,
-    noise_level_max: float = 100.0,
-    noise_level_min: float = 0.0,
-    target_noise_max: Optional[float] = None,
-    target_noise_min: Optional[float] = None,
+    target_noise_max: float = 100.0,
+    target_noise_min: float = 0.0,
     guidance_scale: float = 1.0,
     num_samples: int = 1,
     device: str = 'cuda',
@@ -226,10 +224,8 @@ def generate(
         class_label: Class label (0-999), random if None, -1 for uniform
         caption: Text caption for T2I models (overrides class_label)
         num_steps: Number of denoising steps (diffusion) or max new tokens (autoregressive)
-        noise_level_max: Absolute max noise level (0-100), default 100
-        noise_level_min: Absolute min noise level (0-100), default 0
-        target_noise_max: Target starting noise level (defaults to noise_level_max)
-        target_noise_min: Target ending noise level (defaults to noise_level_min)
+        target_noise_max: Target starting noise level (0-100), default 100 (pure noise)
+        target_noise_min: Target ending noise level (0-100), default 0 (clean)
         guidance_scale: CFG scale (1.0=no guidance)
         num_samples: Number of images
         device: Device for generation
@@ -273,12 +269,10 @@ def generate(
         torch.manual_seed(seed)
         torch.use_deterministic_algorithms(True, warn_only=True)
 
-    # Get timesteps from adapter using model-agnostic noise_level interface
+    # Get timesteps from adapter using target noise range
     timesteps = adapter.get_timesteps(
         num_steps,
         device=device,
-        noise_level_max=noise_level_max,
-        noise_level_min=noise_level_min,
         target_noise_max=target_noise_max,
         target_noise_min=target_noise_min,
         rho=rho,
@@ -321,7 +315,7 @@ def generate(
     x = adapter.get_initial_noise(
         batch_size=num_samples,
         device=device,
-        noise_level=noise_level_max
+        noise_level=target_noise_max
     )
 
     # Iterative denoising with activation masker management

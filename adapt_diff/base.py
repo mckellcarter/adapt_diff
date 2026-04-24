@@ -309,8 +309,8 @@ class GeneratorAdapter(ABC):
         self,
         num_steps: int,
         device: str = 'cuda',
-        noise_level_max: float = 100.0,
-        noise_level_min: float = 0.0,
+        target_noise_max: float = 100.0,
+        target_noise_min: float = 0.0,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -319,8 +319,8 @@ class GeneratorAdapter(ABC):
         Args:
             num_steps: Number of denoising steps
             device: Target device for tensor
-            noise_level_max: Starting noise level (0-100), default 100 (pure noise)
-            noise_level_min: Ending noise level (0-100), default 0 (clean)
+            target_noise_max: Target starting noise level (0-100), default 100 (pure noise)
+            target_noise_min: Target ending noise level (0-100), default 0 (clean)
             **kwargs: Model-specific schedule parameters (e.g., rho for EDM)
 
         Returns:

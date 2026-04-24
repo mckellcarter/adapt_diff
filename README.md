@@ -96,13 +96,13 @@ result = generate(
     noise_mode="fixed",        # "stochastic", "fixed", or "zero"
 )
 
-# With noise_level control (0-100 scale, model-agnostic)
+# With target noise control (0-100 scale, model-agnostic)
 result = generate(
     adapter=adapter,
     class_label=281,
     num_steps=10,
-    noise_level_max=100.0,  # 100 = pure noise (default)
-    noise_level_min=0.5,    # 0.5 = mostly clean
+    target_noise_max=100.0,  # 100 = pure noise (default)
+    target_noise_min=0.5,    # 0.5 = mostly clean
     extract_layers=['encoder_bottleneck'],
     return_trajectory=True,
 )
@@ -252,8 +252,8 @@ noise_min = config.get('noise_min', 0.0)    # Ending noise level (0-100)
 timesteps = adapter.get_timesteps(
     num_steps=num_steps,
     device='cuda',
-    noise_level_max=noise_max,
-    noise_level_min=noise_min
+    target_noise_max=noise_max,
+    target_noise_min=noise_min
 )
 
 # Initialize noise (scaled for starting noise level)
@@ -289,9 +289,69 @@ Each adapter provides sensible defaults via `get_default_config()`. Noise levels
 | MSCOCO T2I | 20 | 100.0 | 0.0 | DDPM timesteps, `guidance_scale=7.5` |
 | AbU Custom SD | 50 | 100.0 | 0.0 | SD v1.4 latent space, `guidance_scale=7.5` |
 
-**Note on noise_level scale**: The 0-100 noise_level maps to native sigma via log interpolation. For attribution at a specific sigma (e.g., σ=0.5), use `adapter.native_to_noise_level(sigma)` to get the corresponding noise_level (~52.1 for DMD2).
-
 **Note on num_steps for attribution**: When extracting activations for attribution, `num_steps` must match the number of steps used to build the training index. The activation at a given sigma depends on the entire denoising trajectory, not just the final sigma value. For DMD2 with yodal training data, use `num_steps=10`.
+
+### Noise Schedule Architecture
+
+The noise schedule system uses a **universal 0-100 scale** (`noise_level`) that abstracts away model-specific noise formats. This enables model-agnostic code while preserving native precision for each architecture.
+
+#### Storage and Formats
+
+| Location | Format | Example |
+|----------|--------|---------|
+| Adapter constants | Native | `SIGMA_MAX=80.0`, `TIMESTEP_MAX=999` |
+| Activation files | Native | sigma=0.5, timestep=500 |
+| Generation API | noise_level (0-100) | `target_noise_max=100.0` |
+| Display/visualization | noise_level (0-100) | "52% noise" |
+
+#### Translation Functions
+
+Each adapter provides bidirectional translation between `noise_level` (0-100) and native format:
+
+```python
+# noise_level → native (for generation)
+sigma = adapter.noise_level_to_native(torch.tensor(50.0))  # → ~0.4 for EDM
+
+# native → noise_level (for display/comparison)
+noise_level = adapter.native_to_noise_level(torch.tensor(0.5))  # → ~52.1 for DMD2
+```
+
+#### Native Ranges by Model
+
+| Model | Native Format | Min | Max | Interpolation |
+|-------|--------------|-----|-----|---------------|
+| EDM | sigma | 0.002 | 80.0 | log-space |
+| DMD2 | sigma | 0.002 | 80.0 | log-space |
+| MSCOCO T2I | timestep | 0 | 999 | linear |
+| AbU Custom SD | timestep | 0 | 999 | linear |
+
+#### Workflow Example
+
+```python
+# 1. Load activation samples (stored in native format)
+data = np.load('activations.npz')
+native_sigmas = data['sigmas']  # e.g., [0.5, 2.0, 10.0, 40.0]
+
+# 2. Convert to noise_level for display
+noise_levels = adapter.native_to_noise_level(torch.tensor(native_sigmas))
+# → [52.1, 65.3, 82.4, 95.2]
+
+# 3. Generate within sample range
+result = generate(
+    adapter,
+    target_noise_max=95.0,  # Match sample range
+    target_noise_min=52.0,
+    num_steps=10,
+)
+
+# 4. Timesteps returned in native format for the sampling loop
+timesteps = result.timesteps  # Native sigmas: [80.0, 40.0, ..., 0.5, 0.0]
+```
+
+This architecture ensures:
+- **Consistency**: All models use the same 0-100 interface
+- **Precision**: Native values preserved for model-specific operations
+- **Interoperability**: Activation data works across visualization tools
 
 ### Adapter Properties
 
@@ -418,13 +478,13 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
         # return (noise_level / 100.0 * 999).long()
 
     # ============ Diffusion Methods ============
-    def get_timesteps(self, num_steps, device='cuda', noise_level_max=100.0, noise_level_min=0.0, **kwargs):
+    def get_timesteps(self, num_steps, device='cuda', target_noise_max=100.0, target_noise_min=0.0, **kwargs):
         """Return noise schedule in native format.
 
         Args:
             num_steps: Number of denoising steps
-            noise_level_max: Starting noise (0-100), default 100
-            noise_level_min: Ending noise (0-100), default 0
+            target_noise_max: Target starting noise (0-100), default 100
+            target_noise_min: Target ending noise (0-100), default 0
         Returns:
             Schedule tensor in native format (sigma or timesteps)
         """
