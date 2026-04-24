@@ -83,10 +83,10 @@ class TestEDMImageNetAdapterDiffusionMethods:
         assert sigmas[-1] == 0.0
 
     def test_get_timesteps_custom_params(self, mock_adapter):
-        """Test timestep generation with custom noise_level parameters."""
-        # noise_level 50-10 maps to partial noise schedule
+        """Test timestep generation with custom target_noise parameters."""
+        # target_noise 50-10 maps to partial noise schedule
         sigmas = mock_adapter.get_timesteps(
-            10, device='cpu', noise_level_max=50.0, noise_level_min=10.0
+            10, device='cpu', target_noise_max=50.0, target_noise_min=10.0
         )
 
         assert len(sigmas) == 11

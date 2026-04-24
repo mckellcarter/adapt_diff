@@ -214,8 +214,8 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         self,
         num_steps: int,
         device: str = 'cuda',
-        noise_level_max: float = 100.0,
-        noise_level_min: float = 0.0,
+        target_noise_max: float = 100.0,
+        target_noise_min: float = 0.0,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -224,23 +224,23 @@ class AbuCustomSDAdapter(HookMixin, GeneratorAdapter):
         Args:
             num_steps: Number of denoising steps
             device: Target device
-            noise_level_max: Starting noise level (0-100), default 100
-            noise_level_min: Ending noise level (0-100), default 0
-            **kwargs: Ignored
+            target_noise_max: Target starting noise level (0-100), default 100 (pure noise)
+            target_noise_min: Target ending noise level (0-100), default 0 (clean)
+            **kwargs: Ignored (for API consistency)
 
         Returns:
             Timesteps tensor (num_steps,) in descending order
 
-        Note: DDPM scheduler generates its own schedule. noise_level_max/min
+        Note: DDPM scheduler generates its own schedule. target_noise_max/min
         are used to clip the range if needed.
         """
         self._scheduler.set_timesteps(num_steps, device=device)
         timesteps = self._scheduler.timesteps
 
-        # Optionally clip to noise_level range
-        if noise_level_max < 100.0 or noise_level_min > 0.0:
-            t_max = int(self.noise_level_to_native(torch.tensor(noise_level_max)))
-            t_min = int(self.noise_level_to_native(torch.tensor(noise_level_min)))
+        # Optionally clip to target noise range
+        if target_noise_max < 100.0 or target_noise_min > 0.0:
+            t_max = int(self.noise_level_to_native(torch.tensor(target_noise_max)))
+            t_min = int(self.noise_level_to_native(torch.tensor(target_noise_min)))
             # Filter timesteps to the range
             mask = (timesteps <= t_max) & (timesteps >= t_min)
             timesteps = timesteps[mask]

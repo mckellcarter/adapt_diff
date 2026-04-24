@@ -187,8 +187,8 @@ class Gemma4E2BAdapter(HookMixin, GeneratorAdapter):
         return torch.multinomial(probs, num_samples=1).squeeze(-1)
 
     def get_timesteps(self, num_steps: int, device: str = 'cuda',
-                      noise_level_max: float = 100.0,
-                      noise_level_min: float = 0.0, **kwargs) -> torch.Tensor:
+                      target_noise_max: float = 100.0,
+                      target_noise_min: float = 0.0, **kwargs) -> torch.Tensor:
         """
         Return token positions to generate.
 

@@ -84,10 +84,10 @@ class TestDMD2ImageNetAdapterDiffusionMethods:
         assert 70.0 < sigmas[0] < 90.0
 
     def test_get_timesteps_custom_params(self, mock_adapter):
-        """Test timestep generation with custom noise_level parameters."""
-        # noise_level 50-10 maps to partial noise schedule
+        """Test timestep generation with custom target_noise parameters."""
+        # target_noise 50-10 maps to partial noise schedule
         sigmas = mock_adapter.get_timesteps(
-            10, device='cpu', noise_level_max=50.0, noise_level_min=10.0
+            10, device='cpu', target_noise_max=50.0, target_noise_min=10.0
         )
 
         assert len(sigmas) == 11
@@ -105,13 +105,9 @@ class TestDMD2ImageNetAdapterDiffusionMethods:
 
     def test_get_timesteps_target_noise(self, mock_adapter):
         """Test timestep generation with target_noise parameters for attribution."""
-        # Compute noise_level for sigma=0.5 (attribution target)
-        import math
-        target_sigma = 0.5
-        log_sigma = math.log(target_sigma)
-        log_min = math.log(mock_adapter.SIGMA_MIN)
-        log_max = math.log(mock_adapter.SIGMA_MAX)
-        target_noise_min = (log_sigma - log_min) / (log_max - log_min) * 100.0
+        # Use adapter's native_to_noise_level for sigma=0.5 (attribution target)
+        target_sigma = torch.tensor(0.5)
+        target_noise_min = mock_adapter.native_to_noise_level(target_sigma).item()
 
         sigmas = mock_adapter.get_timesteps(
             6, device='cpu',

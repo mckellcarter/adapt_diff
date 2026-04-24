@@ -96,13 +96,13 @@ result = generate(
     noise_mode="fixed",        # "stochastic", "fixed", or "zero"
 )
 
-# With noise_level control (0-100 scale, model-agnostic)
+# With target noise control (0-100 scale, model-agnostic)
 result = generate(
     adapter=adapter,
     class_label=281,
     num_steps=10,
-    noise_level_max=100.0,  # 100 = pure noise (default)
-    noise_level_min=0.5,    # 0.5 = mostly clean
+    target_noise_max=100.0,  # 100 = pure noise (default)
+    target_noise_min=0.5,    # 0.5 = mostly clean
     extract_layers=['encoder_bottleneck'],
     return_trajectory=True,
 )
@@ -252,8 +252,8 @@ noise_min = config.get('noise_min', 0.0)    # Ending noise level (0-100)
 timesteps = adapter.get_timesteps(
     num_steps=num_steps,
     device='cuda',
-    noise_level_max=noise_max,
-    noise_level_min=noise_min
+    target_noise_max=noise_max,
+    target_noise_min=noise_min
 )
 
 # Initialize noise (scaled for starting noise level)
@@ -418,13 +418,13 @@ class MyModelAdapter(HookMixin, GeneratorAdapter):
         # return (noise_level / 100.0 * 999).long()
 
     # ============ Diffusion Methods ============
-    def get_timesteps(self, num_steps, device='cuda', noise_level_max=100.0, noise_level_min=0.0, **kwargs):
+    def get_timesteps(self, num_steps, device='cuda', target_noise_max=100.0, target_noise_min=0.0, **kwargs):
         """Return noise schedule in native format.
 
         Args:
             num_steps: Number of denoising steps
-            noise_level_max: Starting noise (0-100), default 100
-            noise_level_min: Ending noise (0-100), default 0
+            target_noise_max: Target starting noise (0-100), default 100
+            target_noise_min: Target ending noise (0-100), default 0
         Returns:
             Schedule tensor in native format (sigma or timesteps)
         """

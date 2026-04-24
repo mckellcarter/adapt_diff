@@ -207,10 +207,8 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         self,
         num_steps: int,
         device: str = 'cuda',
-        noise_level_max: float = 100.0,
-        noise_level_min: float = 0.0,
-        target_noise_max: float = None,
-        target_noise_min: float = None,
+        target_noise_max: float = 100.0,
+        target_noise_min: float = 0.0,
         **kwargs
     ) -> torch.Tensor:
         """
@@ -222,22 +220,16 @@ class MSCOCOT2IAdapter(HookMixin, GeneratorAdapter):
         Args:
             num_steps: Number of denoising steps
             device: Target device
-            noise_level_max: Absolute max noise level (0-100), default 100
-            noise_level_min: Absolute min noise level (0-100), default 0
-            target_noise_max: Target starting noise level (defaults to noise_level_max)
-            target_noise_min: Target ending noise level (defaults to noise_level_min)
-            **kwargs: Ignored (for API consistency with other adapters)
+            target_noise_max: Target starting noise level (0-100), default 100 (pure noise)
+            target_noise_min: Target ending noise level (0-100), default 0 (clean)
+            **kwargs: Ignored (for API consistency)
 
         Returns:
             Timesteps tensor (num_steps,) in descending order
         """
-        # Use target values if provided, otherwise fall back to absolute range
-        effective_max = target_noise_max if target_noise_max is not None else noise_level_max
-        effective_min = target_noise_min if target_noise_min is not None else noise_level_min
-
-        # Convert noise_level to DDPM timesteps
-        t_max = int(effective_max / 100.0 * self.TIMESTEP_MAX)
-        t_min = int(effective_min / 100.0 * self.TIMESTEP_MAX)
+        # Convert target noise levels to DDPM timesteps
+        t_max = int(target_noise_max / 100.0 * self.TIMESTEP_MAX)
+        t_min = int(target_noise_min / 100.0 * self.TIMESTEP_MAX)
 
         # Generate num_steps evenly spaced timesteps in range (descending)
         timesteps = torch.linspace(t_max, t_min, num_steps, device=device).long()
